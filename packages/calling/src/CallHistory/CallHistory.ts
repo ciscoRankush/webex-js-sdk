@@ -1,0 +1,515 @@
+/* eslint-disable dot-notation */
+/* eslint-disable no-underscore-dangle */
+import SDKConnector from '../SDKConnector';
+import {ISDKConnector, WebexSDK} from '../SDKConnector/types';
+import {
+  ALLOWED_SERVICES,
+  HTTP_METHODS,
+  WebexRequestPayload,
+  SORT,
+  SORT_BY,
+  CALLING_BACKEND,
+} from '../common/types';
+import {
+  ICallHistory,
+  JanusResponseEvent,
+  LoggerInterface,
+  UpdateMissedCallsResponse,
+  UCMLinesResponse,
+  DeleteCallHistoryRecordsResponse,
+} from './types';
+import log from '../Logger';
+import {
+  serviceErrorCodeHandler,
+  getVgActionEndpoint,
+  getCallingBackEnd,
+  uploadLogs,
+} from '../common/Utils';
+import {
+  APPLICATION_JSON,
+  CALL_HISTORY_FILE,
+  CONTENT_TYPE,
+  FROM_DATE,
+  HISTORY,
+  LIMIT,
+  NUMBER_OF_DAYS,
+  UPDATE_MISSED_CALLS_ENDPOINT,
+  SET_READ_STATE_SUCCESS_MESSAGE,
+  VERSION_1,
+  UNIFIED_COMMUNICATIONS,
+  CONFIG,
+  PEOPLE,
+  LINES,
+  ORG_ID,
+  DELETE_CALL_HISTORY_RECORDS_ENDPOINT,
+  SET_DELETE_CALL_RECORDS_SUCCESS_MESSAGE,
+  SET_DELETE_CALL_RECORDS_INVALID_DATE_FORMAT_MESSAGE,
+  METHODS,
+} from './constants';
+import {
+  FAILURE_MESSAGE,
+  METHOD_START_MESSAGE,
+  STATUS_CODE,
+  SUCCESS_MESSAGE,
+  USER_SESSIONS,
+} from '../common/constants';
+import {
+  COMMON_EVENT_KEYS,
+  CallHistoryEventTypes,
+  CallSessionEvent,
+  MOBIUS_EVENT_KEYS,
+  UserSession,
+  EndTimeSessionId,
+  CallSessionViewedEvent,
+  SanitizedEndTimeAndSessionId,
+  UCMLinesApiResponse,
+  CallSessionDeletedEvent,
+} from '../Events/types';
+import {Eventing} from '../Events/impl';
+/**
+ * `CallHistory` module is designed to facilitate the retrieval of Call History Records by providing a set of APIs.
+ *
+ * This code snippet demonstrates how to create an instance of `CallHistory` using webex and logger.
+ *
+ * @example
+ * ```javascript
+ * const callHistory = createCallHistoryClient(webex, logger);
+ * ```
+ */
+export class CallHistory extends Eventing<CallHistoryEventTypes> implements ICallHistory {
+  private sdkConnector: ISDKConnector;
+
+  private webex: WebexSDK;
+
+  private janusUrl = '';
+
+  private fromDate = '';
+
+  private loggerContext = {
+    file: CALL_HISTORY_FILE,
+    method: METHODS.GET_CALL_HISTORY_DATA,
+  };
+
+  private userSessions: UserSession[] | undefined;
+
+  /**
+   * @ignore
+   */
+  constructor(webex: WebexSDK, logger: LoggerInterface) {
+    super();
+    this.sdkConnector = SDKConnector;
+    if (!this.sdkConnector.getWebex()) {
+      SDKConnector.setWebex(webex);
+    }
+    this.webex = this.sdkConnector.getWebex();
+    this.janusUrl =
+      this.webex.internal.services._serviceUrls?.janus ||
+      this.webex.internal.services.get(this.webex.internal.services._activeServices.janus);
+    this.registerSessionsListener();
+    log.setLogger(logger.level, CALL_HISTORY_FILE);
+  }
+
+  /**
+   * Function to display the Janus API response.
+   * @param days - Number of days to fetch the call history data.
+   * @param limit - Number of records to be fetched.
+   * @param sort - Sort the records in ascending or descending order.
+   * @param sortBy - Sort the records by start time or end time.
+   */
+  public async getCallHistoryData(
+    days: number = NUMBER_OF_DAYS,
+    limit: number = LIMIT,
+    sort: SORT = SORT.DEFAULT,
+    sortBy: SORT_BY = SORT_BY.DEFAULT
+  ): Promise<JanusResponseEvent> {
+    /*
+      1. Mandatory field for Janus API - fromDate
+      2. Calculating the fromDate by deducting the NUMBER_OF_DAYS with the current date
+     */
+    const date = new Date();
+    const callingBackend = getCallingBackEnd(this.webex);
+    date.setDate(date.getDate() - days);
+    this.fromDate = date.toISOString();
+    const sortByParam = Object.values(SORT_BY).includes(sortBy) ? sortBy : SORT_BY.DEFAULT;
+    const sortParam = Object.values(SORT).includes(sort) ? sort : SORT.DEFAULT;
+
+    log.info(
+      `${METHOD_START_MESSAGE} with days=${days}, limit=${limit}, sort=${sortParam}, sortBy=${sortByParam}`,
+      this.loggerContext
+    );
+
+    log.info(`Janus API URL: ${this.janusUrl}`, this.loggerContext);
+    log.info(`Call history from date : ${this.fromDate}`, this.loggerContext);
+
+    // Add includeSharedSessions=true parameter for WXC backend to fetch calls with sessionType "WEBEXCALLING_SHARED"
+    const sharedSessionsParam =
+      callingBackend === CALLING_BACKEND.WXC ? '&includeSharedSessions=true' : '';
+    log.info(
+      `Fetching call history for ${callingBackend} backend${
+        callingBackend === CALLING_BACKEND.WXC ? ' with shared sessions' : ''
+      }`,
+      this.loggerContext
+    );
+    const url = `${this.janusUrl}/${HISTORY}/${USER_SESSIONS}${FROM_DATE}=${this.fromDate}&limit=${limit}&includeNewSessionTypes=true&sort=${sortParam}${sharedSessionsParam}`;
+
+    try {
+      const janusResponse = <WebexRequestPayload>await this.webex.request({
+        uri: `${url}`,
+        method: HTTP_METHODS.GET,
+        service: ALLOWED_SERVICES.JANUS,
+      });
+
+      log.log(`Response trackingId: ${janusResponse?.headers?.trackingid}`, this.loggerContext);
+
+      this.userSessions = janusResponse.body as UserSession[];
+      if (sortByParam === SORT_BY.START_TIME) {
+        if (sortParam === SORT.DESC) {
+          this.userSessions[USER_SESSIONS].sort(
+            (element: Date, compareElement: Date) =>
+              new Date(compareElement[sortByParam]).getTime() -
+              new Date(element[sortByParam]).getTime()
+          );
+        } else if (sortParam === SORT.ASC) {
+          this.userSessions[USER_SESSIONS].sort(
+            (element: Date, compareElement: Date) =>
+              new Date(element[sortByParam]).getTime() -
+              new Date(compareElement[sortByParam]).getTime()
+          );
+        }
+      }
+      // Check the calling backend
+      if (callingBackend === CALLING_BACKEND.UCM) {
+        // Check if userSessions exist and the length is greater than 0
+        if (this.userSessions[USER_SESSIONS] && this.userSessions[USER_SESSIONS].length > 0) {
+          // Check if cucmDN exists and is valid in any of the userSessions
+          const hasCucmDN = this.userSessions[USER_SESSIONS].some(
+            (session: UserSession) => session.self.cucmDN && session.self.cucmDN.length > 0
+          );
+          // If any user session has cucmDN, proceed to fetch line data
+          if (hasCucmDN) {
+            // Fetch the Lines data
+            const ucmLinesResponse = await this.fetchUCMLinesData();
+
+            // Check if the Lines API response was successful
+            if (ucmLinesResponse.statusCode === 200 && ucmLinesResponse.data.lines?.devices) {
+              const ucmLinesData = ucmLinesResponse.data.lines.devices;
+
+              // Iterate over user sessions and match with Lines data
+              this.userSessions[USER_SESSIONS].forEach((session: UserSession) => {
+                const cucmDN = session.self.cucmDN;
+
+                if (cucmDN) {
+                  ucmLinesData.forEach((device) => {
+                    device.lines.forEach((line) => {
+                      if (line.dnorpattern === cucmDN) {
+                        session.self.ucmLineNumber = line.index; // Assign the ucmLineNumber
+                      }
+                    });
+                  });
+                }
+              });
+            }
+          }
+        }
+      }
+
+      const responseDetails = {
+        statusCode: this.userSessions[STATUS_CODE],
+        data: {
+          userSessions: this.userSessions[USER_SESSIONS],
+        },
+        message: SUCCESS_MESSAGE,
+      };
+
+      log.log(
+        `Successfully retrieved call history data with ${this.userSessions[USER_SESSIONS].length} records`,
+        this.loggerContext
+      );
+
+      return responseDetails;
+    } catch (err: unknown) {
+      log.error(`Failed to get call history: ${JSON.stringify(err)}`, {
+        file: CALL_HISTORY_FILE,
+        method: METHODS.GET_CALL_HISTORY_DATA,
+      });
+      await uploadLogs();
+
+      const errorInfo = err as WebexRequestPayload;
+      const errorStatus = serviceErrorCodeHandler(errorInfo, this.loggerContext);
+
+      return errorStatus;
+    }
+  }
+
+  /**
+   * Function to update the missed call status in the call history using sessionId and time.
+   * @param endTimeSessionIds - An array of objects containing endTime and sessionId of the missed call history records
+   * @returns {Promise} Resolves to an object of type  {@link UpdateMissedCallsResponse}.Response details with success or error status.
+   */
+  public async updateMissedCalls(
+    endTimeSessionIds: EndTimeSessionId[]
+  ): Promise<UpdateMissedCallsResponse> {
+    const loggerContext = {
+      file: CALL_HISTORY_FILE,
+      method: METHODS.UPDATE_MISSED_CALLS,
+    };
+    // Convert endTime to milliseconds for each session
+    const santizedSessionIds: SanitizedEndTimeAndSessionId[] = endTimeSessionIds.map((session) => ({
+      ...session,
+      endTime: new Date(session.endTime).getTime(),
+    }));
+    const requestBody = {
+      endTimeSessionIds: santizedSessionIds,
+    };
+
+    log.info(
+      `${METHOD_START_MESSAGE} with sessions: ${JSON.stringify(santizedSessionIds)}`,
+      loggerContext
+    );
+    try {
+      const updateMissedCallContentUrl = `${this.janusUrl}/${HISTORY}/${USER_SESSIONS}/${UPDATE_MISSED_CALLS_ENDPOINT}`;
+      // Make a POST request to update missed calls
+      const response = await fetch(updateMissedCallContentUrl, {
+        method: HTTP_METHODS.POST,
+        headers: {
+          [CONTENT_TYPE]: APPLICATION_JSON,
+          Authorization: await this.webex.credentials.getUserToken(),
+        },
+        body: JSON.stringify(requestBody),
+      });
+      if (!response.ok) {
+        throw new Error(`${response.status}`);
+      }
+
+      log.log(`Response trackingId: ${response.headers?.get('trackingid')}`, loggerContext);
+
+      const data: UpdateMissedCallsResponse = await response.json();
+      log.log(`Missed calls are successfully read by the user`, loggerContext);
+      const responseDetails: UpdateMissedCallsResponse = {
+        statusCode: data.statusCode as number,
+        data: {
+          readStatusMessage: SET_READ_STATE_SUCCESS_MESSAGE,
+        },
+        message: SUCCESS_MESSAGE,
+      };
+
+      log.log(`Successfully updated ${santizedSessionIds?.length} missed calls`, loggerContext);
+
+      return responseDetails;
+    } catch (err: unknown) {
+      log.error(`Failed to update missed calls: ${JSON.stringify(err)}`, {
+        file: CALL_HISTORY_FILE,
+        method: METHODS.UPDATE_MISSED_CALLS,
+      });
+      await uploadLogs();
+
+      // Catch the 401 error from try block, return the error object to user
+      const errorInfo = {
+        statusCode: err instanceof Error ? Number(err.message) : '',
+      } as WebexRequestPayload;
+      const errorStatus = serviceErrorCodeHandler(errorInfo, loggerContext);
+
+      return errorStatus;
+    }
+  }
+
+  /**
+   * Function to display the UCM Lines API response.
+   * @returns {Promise} Resolves to an object of type  {@link UCMLinesResponse}.Response details with success or error status.
+   */
+  private async fetchUCMLinesData(): Promise<UCMLinesResponse> {
+    const loggerContext = {
+      file: CALL_HISTORY_FILE,
+      method: METHODS.FETCH_UCM_LINES_DATA,
+    };
+    const vgEndpoint = getVgActionEndpoint(this.webex, CALLING_BACKEND.UCM);
+    const userId = this.webex.internal.device.userId;
+    const orgId = this.webex.internal.device.orgId;
+    const linesURIForUCM = `${vgEndpoint}/${VERSION_1}/${UNIFIED_COMMUNICATIONS}/${CONFIG}/${PEOPLE}/${userId}/${LINES}?${ORG_ID}=${orgId}`;
+
+    log.info(`${METHOD_START_MESSAGE} with URL: ${linesURIForUCM}`, loggerContext);
+    try {
+      const response = <WebexRequestPayload>await this.webex.request({
+        uri: `${linesURIForUCM}`,
+        method: HTTP_METHODS.GET,
+      });
+
+      log.log(`Response trackingId: ${response?.headers?.trackingid}`, loggerContext);
+
+      const ucmLineDetails: UCMLinesResponse = {
+        statusCode: Number(response.statusCode),
+        data: {
+          lines: response.body as UCMLinesApiResponse,
+        },
+        message: SUCCESS_MESSAGE,
+      };
+
+      log.log(`Line details fetched successfully`, loggerContext);
+
+      return ucmLineDetails;
+    } catch (err: unknown) {
+      log.error(`Failed to fetch UCM lines data: ${JSON.stringify(err)}`, {
+        file: CALL_HISTORY_FILE,
+        method: METHODS.FETCH_UCM_LINES_DATA,
+      });
+      await uploadLogs();
+
+      const errorInfo = err as WebexRequestPayload;
+      const errorStatus = serviceErrorCodeHandler(errorInfo, loggerContext);
+
+      return errorStatus;
+    }
+  }
+
+  /**
+   * Function to delete the call history records using sessionId and endTime.
+   * @param deleteSessionIds - An array of objects containing endTime and sessionId of the call history records
+   * @returns {Promise} Resolves to an object of type  {@link DeleteCallHistoryRecordsResponse}.Response details with success or error status.
+   */
+  public async deleteCallHistoryRecords(
+    deleteSessionIds: EndTimeSessionId[]
+  ): Promise<DeleteCallHistoryRecordsResponse> {
+    const loggerContext = {
+      file: CALL_HISTORY_FILE,
+      method: METHODS.DELETE_CALL_HISTORY_RECORDS,
+    };
+
+    // Collect all sessions with invalid dates (endTime) in an array
+    const invalidSessions = deleteSessionIds.filter((session) =>
+      Number.isNaN(new Date(session.endTime).getTime())
+    );
+
+    log.info(
+      `${METHOD_START_MESSAGE} with sessions: ${JSON.stringify(deleteSessionIds)}`,
+      loggerContext
+    );
+
+    if (invalidSessions.length > 0) {
+      // If there are invalid sessions, return an error with details
+      const invalidSessionIds = invalidSessions.map((session) => session.sessionId).join(', ');
+      log.info(
+        `The provided date is malformed or invalid for session IDs: ${invalidSessionIds}`,
+        loggerContext
+      );
+
+      return {
+        statusCode: 400,
+        data: {
+          deleteStatusMessage: SET_DELETE_CALL_RECORDS_INVALID_DATE_FORMAT_MESSAGE,
+        },
+        message: FAILURE_MESSAGE,
+      };
+    }
+
+    // Convert endTime to milliseconds for each sessionId
+    const santizedSessionIds: SanitizedEndTimeAndSessionId[] = deleteSessionIds.map((session) => ({
+      ...session,
+      endTime: new Date(session.endTime).getTime(),
+    }));
+
+    const deleteRequestBody = {
+      deleteSessionIds: santizedSessionIds,
+    };
+
+    try {
+      const deleteCallHistoryRecordContentUrl = `${this.janusUrl}/${HISTORY}/${USER_SESSIONS}/${DELETE_CALL_HISTORY_RECORDS_ENDPOINT}`;
+      // Make a POST request to delete call history records
+      const response = await fetch(deleteCallHistoryRecordContentUrl, {
+        method: HTTP_METHODS.POST,
+        headers: {
+          [CONTENT_TYPE]: APPLICATION_JSON,
+          Authorization: await this.webex.credentials.getUserToken(),
+        },
+        body: JSON.stringify(deleteRequestBody),
+      });
+      if (!response.ok) {
+        throw new Error(`${response.status}`);
+      }
+
+      log.log(`Response trackingId: ${response.headers?.get('trackingid')}`, loggerContext);
+
+      const data: DeleteCallHistoryRecordsResponse = await response.json();
+      log.log(
+        `Successfully deleted ${santizedSessionIds?.length} call history records`,
+        loggerContext
+      );
+      const responseDetails: DeleteCallHistoryRecordsResponse = {
+        statusCode: data.statusCode as number,
+        data: {
+          deleteStatusMessage: SET_DELETE_CALL_RECORDS_SUCCESS_MESSAGE,
+        },
+        message: SUCCESS_MESSAGE,
+      };
+
+      return responseDetails;
+    } catch (err: unknown) {
+      log.error(`Failed to delete call history records: ${JSON.stringify(err)}`, {
+        file: CALL_HISTORY_FILE,
+        method: METHODS.DELETE_CALL_HISTORY_RECORDS,
+      });
+      await uploadLogs();
+
+      // Catch the 401 error from try block, return the error object to user
+      const errorInfo = {
+        statusCode: err instanceof Error ? Number(err.message) : '',
+      } as WebexRequestPayload;
+      const errorStatus = serviceErrorCodeHandler(errorInfo, loggerContext);
+
+      return errorStatus;
+    }
+  }
+
+  handleSessionEvents = async (event?: CallSessionEvent) => {
+    if (event && event.data.userSessions.userSessions) {
+      this.emit(COMMON_EVENT_KEYS.CALL_HISTORY_USER_SESSION_INFO, event as CallSessionEvent);
+    }
+  };
+
+  handleUserReadSessionEvents = async (event?: CallSessionViewedEvent) => {
+    if (event && event.data.userReadSessions.userReadSessions) {
+      this.emit(
+        COMMON_EVENT_KEYS.CALL_HISTORY_USER_VIEWED_SESSIONS,
+        event as CallSessionViewedEvent
+      );
+    }
+  };
+
+  handleUserSessionsDeletedEvents = async (event?: CallSessionDeletedEvent) => {
+    if (event && event.data.deletedSessions) {
+      this.emit(
+        COMMON_EVENT_KEYS.CALL_HISTORY_USER_SESSIONS_DELETED,
+        event as CallSessionDeletedEvent
+      );
+    }
+  };
+
+  /**
+   *
+   */
+  private registerSessionsListener() {
+    this.sdkConnector.registerListener<CallSessionEvent>(
+      MOBIUS_EVENT_KEYS.CALL_SESSION_EVENT_INCLUSIVE,
+      this.handleSessionEvents
+    );
+    this.sdkConnector.registerListener<CallSessionEvent>(
+      MOBIUS_EVENT_KEYS.CALL_SESSION_EVENT_LEGACY,
+      this.handleSessionEvents
+    );
+    this.sdkConnector.registerListener<CallSessionViewedEvent>(
+      MOBIUS_EVENT_KEYS.CALL_SESSION_EVENT_VIEWED,
+      this.handleUserReadSessionEvents
+    );
+    this.sdkConnector.registerListener<CallSessionDeletedEvent>(
+      MOBIUS_EVENT_KEYS.CALL_SESSION_EVENT_DELETED,
+      this.handleUserSessionsDeletedEvents
+    );
+  }
+}
+/**
+ * Creates a `CallHistory` client instance for accessing Call History APIs.
+ *
+ * @param {WebexSDK} webex - `Webex SDK` instance.
+ * @param {LoggerInterface} logger - An instance implementing LoggerInterface used to set the log level for the module.
+ */
+export const createCallHistoryClient = (webex: WebexSDK, logger: LoggerInterface): ICallHistory =>
+  new CallHistory(webex, logger);

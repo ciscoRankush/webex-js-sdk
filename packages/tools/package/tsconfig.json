@@ -1,0 +1,6 @@
+{
+  "extends": "./../../../config/typescript/modern.json",
+  "include": [
+    "./src/**/*.ts"
+  ]
+}

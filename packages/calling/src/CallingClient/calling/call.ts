@@ -1,0 +1,3152 @@
+import {
+  MediaConnectionEventNames,
+  LocalMicrophoneStream,
+  LocalStreamEventNames,
+  RoapMediaConnection,
+} from '@webex/internal-media-core';
+import {createMachine, interpret} from 'xstate';
+import {v4 as uuid} from 'uuid';
+import {EffectEvent, TrackEffect} from '@webex/web-media-effects';
+import {RtcMetrics} from '@webex/internal-plugin-metrics';
+import {ERROR_LAYER, ERROR_TYPE, ErrorContext} from '../../Errors/types';
+import {
+  handleCallErrors,
+  modifySdpForIPv4,
+  parseMediaQualityStatistics,
+  serviceErrorCodeHandler,
+  uploadLogs,
+} from '../../common/Utils';
+import {
+  ALLOWED_SERVICES,
+  CallDetails,
+  CallDirection,
+  CallId,
+  CorrelationId,
+  DisplayInformation,
+  HTTP_METHODS,
+  ServiceIndicator,
+  WebexRequestPayload,
+} from '../../common/types';
+import {CallError, createCallError} from '../../Errors/catalog/CallError';
+/* eslint-disable tsdoc/syntax */
+/* eslint-disable no-param-reassign */
+import {
+  CALL_ENDPOINT_RESOURCE,
+  CALL_FILE,
+  CALL_HOLD_SERVICE,
+  CALL_STATUS_RESOURCE,
+  CALL_TRANSFER_SERVICE,
+  CALLING_USER_AGENT,
+  CALLS_ENDPOINT_RESOURCE,
+  CISCO_DEVICE_URL,
+  DEFAULT_LOCAL_CALL_ID,
+  DEFAULT_SESSION_TIMER,
+  DEVICES_ENDPOINT_RESOURCE,
+  HOLD_ENDPOINT,
+  ICE_CANDIDATES_TIMEOUT,
+  INITIAL_SEQ_NUMBER,
+  MAX_CALL_KEEPALIVE_RETRY_COUNT,
+  MEDIA_ENDPOINT_RESOURCE,
+  METHODS,
+  NOISE_REDUCTION_EFFECT,
+  RESUME_ENDPOINT,
+  SPARK_USER_AGENT,
+  SUPPLEMENTARY_SERVICES_TIMEOUT,
+  TRANSFER_ENDPOINT,
+} from '../constants';
+import SDKConnector from '../../SDKConnector';
+import {Eventing} from '../../Events/impl';
+import {
+  CALL_EVENT_KEYS,
+  CallerIdInfo,
+  CallEvent,
+  CallEventTypes,
+  MEDIA_CONNECTION_EVENT_KEYS,
+  MOBIUS_MIDCALL_STATE,
+  RoapEvent,
+  RoapMessage,
+  SUPPLEMENTARY_SERVICES,
+} from '../../Events/types';
+import {ISDKConnector, WebexSDK} from '../../SDKConnector/types';
+import {
+  CallRtpStats,
+  DeleteRecordCallBack,
+  DisconnectCause,
+  DisconnectCode,
+  DisconnectReason,
+  ICall,
+  MediaContext,
+  MidCallCallerId,
+  MidCallEvent,
+  MidCallEventType,
+  MobiusCallData,
+  MobiusCallResponse,
+  MobiusCallState,
+  MUTE_TYPE,
+  PatchResponse,
+  RoapScenario,
+  SSResponse,
+  SupplementaryServiceState,
+  TransferContext,
+  TransferType,
+} from './types';
+import log from '../../Logger';
+import {ICallerId} from './CallerId/types';
+import {createCallerId} from './CallerId';
+import {IMetricManager, METRIC_TYPE, METRIC_EVENT, TRANSFER_ACTION} from '../../Metrics/types';
+import {getMetricManager} from '../../Metrics';
+import {METHOD_START_MESSAGE, SERVICES_ENDPOINT} from '../../common/constants';
+
+/**
+ *
+ */
+export class Call extends Eventing<CallEventTypes> implements ICall {
+  private sdkConnector: ISDKConnector;
+
+  private webex: WebexSDK;
+
+  private destination?: CallDetails;
+
+  private direction: CallDirection;
+
+  private callId: CallId;
+
+  private correlationId: CorrelationId;
+
+  private deviceId: string;
+
+  public lineId: string;
+
+  private disconnectReason: DisconnectReason;
+
+  private callStateMachine;
+
+  private mediaStateMachine;
+
+  private seq: number; // TODO: remove later
+
+  /* TODO: Need to change the type from any to RoapMediaConnection  */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  public mediaConnection?: any;
+
+  private earlyMedia: boolean;
+
+  private connected: boolean;
+
+  private mediaInactivity: boolean;
+
+  private callerInfo: DisplayInformation;
+
+  private localRoapMessage: RoapMessage; // Use it for new offer
+
+  private mobiusUrl!: string;
+
+  private remoteRoapMessage: RoapMessage | null;
+
+  private deleteCb: DeleteRecordCallBack;
+
+  private callerId: ICallerId;
+
+  private sessionTimer?: NodeJS.Timeout;
+
+  /* Used to wait for final responses for supplementary services */
+  private supplementaryServicesTimer?: NodeJS.Timeout;
+
+  private muted: boolean;
+
+  private held: boolean;
+
+  private metricManager: IMetricManager;
+
+  private broadworksCorrelationInfo?: string; // Used in WxCC calls
+
+  private serviceIndicator: ServiceIndicator;
+
+  private mediaNegotiationCompleted: boolean;
+
+  private receivedRoapOKSeq: number;
+
+  private localAudioStream?: LocalMicrophoneStream;
+
+  private rtcMetrics: RtcMetrics;
+
+  private callKeepaliveRetryCount = 0;
+
+  /**
+   * Getter to check if the call is muted or not.
+   *
+   * @returns - Boolean.
+   */
+  public isMuted() {
+    return this.muted;
+  }
+
+  /**
+   * Getter to check if the call is connected or not.
+   *
+   * @returns - Boolean.
+   */
+  public isConnected() {
+    return this.connected;
+  }
+
+  /**
+   * Getter to check if the call is held or not.
+   *
+   * @returns - Boolean.
+   */
+  public isHeld() {
+    return this.held;
+  }
+
+  /**
+   * @ignore
+   */
+  constructor(
+    activeUrl: string,
+    webex: WebexSDK,
+    direction: CallDirection,
+    deviceId: string,
+    lineId: string,
+    deleteCb: DeleteRecordCallBack,
+    indicator: ServiceIndicator,
+    destination?: CallDetails
+  ) {
+    super();
+    this.destination = destination;
+    this.direction = direction;
+    this.sdkConnector = SDKConnector;
+    this.deviceId = deviceId;
+    this.serviceIndicator = indicator;
+    this.lineId = lineId;
+
+    /* istanbul ignore else */
+    if (!this.sdkConnector.getWebex()) {
+      SDKConnector.setWebex(webex);
+    }
+    this.webex = this.sdkConnector.getWebex();
+    this.metricManager = getMetricManager(this.webex, this.serviceIndicator);
+    this.callId = `${DEFAULT_LOCAL_CALL_ID}_${uuid()}`;
+    this.correlationId = uuid();
+    this.deleteCb = deleteCb;
+    this.connected = false;
+    this.mediaInactivity = false;
+    this.held = false;
+    this.earlyMedia = false;
+    this.callerInfo = {} as DisplayInformation;
+    this.localRoapMessage = {} as RoapMessage;
+
+    this.mobiusUrl = activeUrl;
+    this.receivedRoapOKSeq = 0;
+    this.mediaNegotiationCompleted = false;
+
+    log.info(`Webex Calling Url:- ${this.mobiusUrl}`, {
+      file: CALL_FILE,
+      method: METHODS.CONSTRUCTOR,
+    });
+
+    this.seq = INITIAL_SEQ_NUMBER;
+    this.callerId = createCallerId(webex, (callerInfo: DisplayInformation) => {
+      this.callerInfo = callerInfo;
+      const emitObj = {
+        correlationId: this.correlationId,
+        callerId: this.callerInfo,
+      };
+
+      this.emit(CALL_EVENT_KEYS.CALLER_ID, emitObj);
+    });
+    this.remoteRoapMessage = null;
+    this.disconnectReason = {code: DisconnectCode.NORMAL, cause: DisconnectCause.NORMAL};
+
+    this.rtcMetrics = new RtcMetrics(this.webex, {callId: this.callId}, this.correlationId);
+
+    const callMachine = createMachine(
+      {
+        schema: {
+          context: {},
+          // The events this machine handles
+          events: {} as CallEvent,
+        },
+        id: 'call-state',
+        initial: 'S_IDLE',
+        context: {},
+        states: {
+          S_IDLE: {
+            on: {
+              E_RECV_CALL_SETUP: {
+                target: 'S_RECV_CALL_SETUP',
+                actions: ['incomingCallSetup'],
+              },
+              E_SEND_CALL_SETUP: {
+                target: 'S_SEND_CALL_SETUP',
+                actions: ['outgoingCallSetup'],
+              },
+              E_RECV_CALL_DISCONNECT: {
+                target: 'S_RECV_CALL_DISCONNECT',
+                actions: ['incomingCallDisconnect'],
+              },
+              E_SEND_CALL_DISCONNECT: {
+                target: 'S_SEND_CALL_DISCONNECT',
+                actions: ['outgoingCallDisconnect'],
+              },
+              E_UNKNOWN: {
+                target: 'S_UNKNOWN',
+                actions: ['unknownState'],
+              },
+            },
+          },
+
+          /* CALL SETUP */
+          S_RECV_CALL_SETUP: {
+            after: {
+              10000: {
+                target: 'S_CALL_CLEARED',
+                actions: ['triggerTimeout'],
+              },
+            },
+            on: {
+              E_SEND_CALL_ALERTING: {
+                target: 'S_SEND_CALL_PROGRESS',
+                actions: ['outgoingCallAlerting'],
+              },
+              E_RECV_CALL_DISCONNECT: {
+                target: 'S_RECV_CALL_DISCONNECT',
+                actions: ['incomingCallDisconnect'],
+              },
+              E_SEND_CALL_DISCONNECT: {
+                target: 'S_SEND_CALL_DISCONNECT',
+                actions: ['outgoingCallDisconnect'],
+              },
+              E_UNKNOWN: {
+                target: 'S_UNKNOWN',
+                actions: ['unknownState'],
+              },
+            },
+          },
+          S_SEND_CALL_SETUP: {
+            after: {
+              10000: {
+                target: 'S_CALL_CLEARED',
+                actions: ['triggerTimeout'],
+              },
+            },
+            on: {
+              E_RECV_CALL_PROGRESS: {
+                target: 'S_RECV_CALL_PROGRESS',
+                actions: ['incomingCallProgress'],
+              },
+              E_RECV_CALL_CONNECT: {
+                target: 'S_RECV_CALL_CONNECT',
+                actions: ['incomingCallConnect'],
+              },
+              E_RECV_CALL_DISCONNECT: {
+                target: 'S_RECV_CALL_DISCONNECT',
+                actions: ['incomingCallDisconnect'],
+              },
+              E_SEND_CALL_DISCONNECT: {
+                target: 'S_SEND_CALL_DISCONNECT',
+                actions: ['outgoingCallDisconnect'],
+              },
+              E_UNKNOWN: {
+                target: 'S_UNKNOWN',
+                actions: ['unknownState'],
+              },
+            },
+          },
+
+          /* CALL_PROGRESS */
+          S_RECV_CALL_PROGRESS: {
+            after: {
+              60000: {
+                target: 'S_CALL_CLEARED',
+                actions: ['triggerTimeout'],
+              },
+            },
+            on: {
+              E_RECV_CALL_CONNECT: {
+                target: 'S_RECV_CALL_CONNECT',
+                actions: ['incomingCallConnect'],
+              },
+              E_RECV_CALL_DISCONNECT: {
+                target: 'S_RECV_CALL_DISCONNECT',
+                actions: ['incomingCallDisconnect'],
+              },
+              E_SEND_CALL_DISCONNECT: {
+                target: 'S_SEND_CALL_DISCONNECT',
+                actions: ['outgoingCallDisconnect'],
+              },
+              // Possible to have multiple E_RECV_CALL_PROGRESS events, handler should handle it
+              E_RECV_CALL_PROGRESS: {
+                target: 'S_RECV_CALL_PROGRESS',
+                actions: ['incomingCallProgress'],
+              },
+              E_UNKNOWN: {
+                target: 'S_UNKNOWN',
+                actions: ['unknownState'],
+              },
+            },
+          },
+          S_SEND_CALL_PROGRESS: {
+            after: {
+              60000: {
+                target: 'S_CALL_CLEARED',
+                actions: ['triggerTimeout'],
+              },
+            },
+            on: {
+              E_SEND_CALL_CONNECT: {
+                target: 'S_SEND_CALL_CONNECT',
+                actions: ['outgoingCallConnect'],
+              },
+              E_RECV_CALL_DISCONNECT: {
+                target: 'S_RECV_CALL_DISCONNECT',
+                actions: ['incomingCallDisconnect'],
+              },
+              E_SEND_CALL_DISCONNECT: {
+                target: 'S_SEND_CALL_DISCONNECT',
+                actions: ['outgoingCallDisconnect'],
+              },
+              E_UNKNOWN: {
+                target: 'S_UNKNOWN',
+                actions: ['unknownState'],
+              },
+            },
+          },
+
+          /* CALL_CONNECT */
+          S_RECV_CALL_CONNECT: {
+            after: {
+              10000: {
+                target: 'S_CALL_CLEARED',
+                actions: ['triggerTimeout'],
+              },
+            },
+            on: {
+              E_CALL_ESTABLISHED: {
+                target: 'S_CALL_ESTABLISHED',
+                actions: ['callEstablished'],
+              },
+              E_RECV_CALL_DISCONNECT: {
+                target: 'S_RECV_CALL_DISCONNECT',
+                actions: ['incomingCallDisconnect'],
+              },
+              E_SEND_CALL_DISCONNECT: {
+                target: 'S_SEND_CALL_DISCONNECT',
+                actions: ['outgoingCallDisconnect'],
+              },
+              E_UNKNOWN: {
+                target: 'S_UNKNOWN',
+                actions: ['unknownState'],
+              },
+            },
+          },
+          S_SEND_CALL_CONNECT: {
+            after: {
+              10000: {
+                target: 'S_CALL_CLEARED',
+                actions: ['triggerTimeout'],
+              },
+            },
+            on: {
+              E_CALL_ESTABLISHED: {
+                target: 'S_CALL_ESTABLISHED',
+                actions: ['callEstablished'],
+              },
+              E_RECV_CALL_DISCONNECT: {
+                target: 'S_RECV_CALL_DISCONNECT',
+                actions: ['incomingCallDisconnect'],
+              },
+              E_SEND_CALL_DISCONNECT: {
+                target: 'S_SEND_CALL_DISCONNECT',
+                actions: ['outgoingCallDisconnect'],
+              },
+              E_UNKNOWN: {
+                target: 'S_UNKNOWN',
+                actions: ['unknownState'],
+              },
+            },
+          },
+          S_CALL_HOLD: {
+            on: {
+              E_RECV_CALL_DISCONNECT: {
+                target: 'S_RECV_CALL_DISCONNECT',
+                actions: ['incomingCallDisconnect'],
+              },
+              E_SEND_CALL_DISCONNECT: {
+                target: 'S_SEND_CALL_DISCONNECT',
+                actions: ['outgoingCallDisconnect'],
+              },
+              E_CALL_ESTABLISHED: {
+                target: 'S_CALL_ESTABLISHED',
+                actions: ['callEstablished'],
+              },
+              E_UNKNOWN: {
+                target: 'S_UNKNOWN',
+                actions: ['unknownState'],
+              },
+            },
+          },
+          S_CALL_RESUME: {
+            on: {
+              E_RECV_CALL_DISCONNECT: {
+                target: 'S_RECV_CALL_DISCONNECT',
+                actions: ['incomingCallDisconnect'],
+              },
+              E_SEND_CALL_DISCONNECT: {
+                target: 'S_SEND_CALL_DISCONNECT',
+                actions: ['outgoingCallDisconnect'],
+              },
+              E_CALL_ESTABLISHED: {
+                target: 'S_CALL_ESTABLISHED',
+                actions: ['callEstablished'],
+              },
+              E_UNKNOWN: {
+                target: 'S_UNKNOWN',
+                actions: ['unknownState'],
+              },
+            },
+          },
+          /* CALL_ESTABLISHED */
+          S_CALL_ESTABLISHED: {
+            on: {
+              E_CALL_HOLD: {
+                target: 'S_CALL_HOLD',
+                actions: ['initiateCallHold'],
+              },
+              E_CALL_RESUME: {
+                target: 'S_CALL_RESUME',
+                actions: ['initiateCallResume'],
+              },
+              E_RECV_CALL_DISCONNECT: {
+                target: 'S_RECV_CALL_DISCONNECT',
+                actions: ['incomingCallDisconnect'],
+              },
+              E_SEND_CALL_DISCONNECT: {
+                target: 'S_SEND_CALL_DISCONNECT',
+                actions: ['outgoingCallDisconnect'],
+              },
+              E_CALL_ESTABLISHED: {
+                target: 'S_CALL_ESTABLISHED',
+                actions: ['callEstablished'],
+              },
+              E_UNKNOWN: {
+                target: 'S_UNKNOWN',
+                actions: ['unknownState'],
+              },
+            },
+          },
+
+          /* CALL_DISCONNECT */
+          S_RECV_CALL_DISCONNECT: {
+            on: {
+              E_CALL_CLEARED: 'S_CALL_CLEARED',
+            },
+          },
+          S_SEND_CALL_DISCONNECT: {
+            on: {
+              E_CALL_CLEARED: 'S_CALL_CLEARED',
+            },
+          },
+
+          /* UNKNOWN_EVENTS */
+          S_UNKNOWN: {
+            on: {
+              E_CALL_CLEARED: 'S_CALL_CLEARED',
+            },
+          },
+
+          /* ERROR_EVENTS */
+          S_ERROR: {
+            on: {
+              E_CALL_CLEARED: 'S_CALL_CLEARED',
+            },
+          },
+
+          /* End of our state-machine */
+          S_CALL_CLEARED: {
+            type: 'final',
+          },
+        },
+      },
+      {
+        actions: {
+          /**
+           * .
+           *
+           * @param context
+           * @param event
+           */
+          incomingCallSetup: (context, event: CallEvent) => this.handleIncomingCallSetup(event),
+          /**
+           * .
+           *
+           * @param context
+           * @param event
+           */
+          outgoingCallSetup: (context, event: CallEvent) => this.handleOutgoingCallSetup(event),
+          /**
+           * .
+           *
+           * @param context
+           * @param event
+           */
+          incomingCallProgress: (context, event: CallEvent) =>
+            this.handleIncomingCallProgress(event),
+          /**
+           * .
+           *
+           * @param context
+           * @param event
+           */
+          outgoingCallAlerting: (context, event: CallEvent) =>
+            this.handleOutgoingCallAlerting(event),
+          /**
+           * .
+           *
+           * @param context
+           * @param event
+           */
+          incomingCallConnect: (context, event: CallEvent) => this.handleIncomingCallConnect(event),
+          /**
+           * .
+           *
+           * @param context
+           * @param event
+           */
+          outgoingCallConnect: (context, event: CallEvent) => this.handleOutgoingCallConnect(event),
+          /**
+           * .
+           *
+           * @param context
+           * @param event
+           */
+          callEstablished: (context, event: CallEvent) => this.handleCallEstablished(event),
+          /**
+           * .
+           *
+           * @param context
+           * @param event
+           */
+          initiateCallHold: (context, event: CallEvent) => this.handleCallHold(event),
+          /**
+           * .
+           *
+           * @param context
+           * @param event
+           */
+          initiateCallResume: (context, event: CallEvent) => this.handleCallResume(event),
+          /**
+           * .
+           *
+           * @param context
+           * @param event
+           */
+          incomingCallDisconnect: (context, event: CallEvent) =>
+            this.handleIncomingCallDisconnect(event),
+          /**
+           * .
+           *
+           * @param context
+           * @param event
+           */
+          outgoingCallDisconnect: (context, event: CallEvent) =>
+            this.handleOutgoingCallDisconnect(event),
+          /**
+           * .
+           *
+           * @param context
+           * @param event
+           */
+          unknownState: (context, event: CallEvent) => this.handleUnknownState(event),
+          /**
+           *
+           */
+          triggerTimeout: () => this.handleTimeout(),
+        },
+      }
+    );
+
+    const mediaMachine = createMachine(
+      {
+        schema: {
+          // The context (extended state) of the machine
+          context: {},
+          // The events this machine handles
+          events: {} as RoapEvent,
+        },
+        id: 'roap-state',
+        initial: 'S_ROAP_IDLE',
+        context: {},
+        states: {
+          S_ROAP_IDLE: {
+            on: {
+              E_RECV_ROAP_OFFER_REQUEST: {
+                target: 'S_RECV_ROAP_OFFER_REQUEST',
+                actions: ['incomingRoapOfferRequest'],
+              },
+              E_RECV_ROAP_OFFER: {
+                target: 'S_RECV_ROAP_OFFER',
+                actions: ['incomingRoapOffer'],
+              },
+              E_SEND_ROAP_OFFER: {
+                target: 'S_SEND_ROAP_OFFER',
+                actions: ['outgoingRoapOffer'],
+              },
+            },
+          },
+          S_RECV_ROAP_OFFER_REQUEST: {
+            on: {
+              E_SEND_ROAP_OFFER: {
+                target: 'S_SEND_ROAP_OFFER',
+                actions: ['outgoingRoapOffer'],
+              },
+              E_ROAP_OK: {
+                target: 'S_ROAP_OK',
+                actions: ['roapEstablished'],
+              },
+              E_ROAP_ERROR: {
+                target: 'S_ROAP_ERROR',
+                actions: ['roapError'],
+              },
+            },
+          },
+          S_RECV_ROAP_OFFER: {
+            on: {
+              E_SEND_ROAP_ANSWER: {
+                target: 'S_SEND_ROAP_ANSWER',
+                actions: ['outgoingRoapAnswer'],
+              },
+              E_ROAP_OK: {
+                target: 'S_ROAP_OK',
+                actions: ['roapEstablished'],
+              },
+              E_ROAP_ERROR: {
+                target: 'S_ROAP_ERROR',
+                actions: ['roapError'],
+              },
+            },
+          },
+          S_SEND_ROAP_OFFER: {
+            on: {
+              E_RECV_ROAP_ANSWER: {
+                target: 'S_RECV_ROAP_ANSWER',
+                actions: ['incomingRoapAnswer'],
+              },
+              E_SEND_ROAP_ANSWER: {
+                target: 'S_SEND_ROAP_ANSWER',
+                actions: ['outgoingRoapAnswer'],
+              },
+              E_SEND_ROAP_OFFER: {
+                target: 'S_SEND_ROAP_OFFER',
+                actions: ['outgoingRoapOffer'],
+              },
+              E_ROAP_ERROR: {
+                target: 'S_ROAP_ERROR',
+                actions: ['roapError'],
+              },
+            },
+          },
+          S_RECV_ROAP_ANSWER: {
+            on: {
+              E_ROAP_OK: {
+                target: 'S_ROAP_OK',
+                actions: ['roapEstablished'],
+              },
+              E_ROAP_ERROR: {
+                target: 'S_ROAP_ERROR',
+                actions: ['roapError'],
+              },
+            },
+          },
+          S_SEND_ROAP_ANSWER: {
+            on: {
+              E_RECV_ROAP_OFFER_REQUEST: {
+                target: 'S_RECV_ROAP_OFFER_REQUEST',
+                actions: ['incomingRoapOfferRequest'],
+              },
+              E_RECV_ROAP_OFFER: {
+                target: 'S_RECV_ROAP_OFFER',
+                actions: ['incomingRoapOffer'],
+              },
+              E_ROAP_OK: {
+                target: 'S_ROAP_OK',
+                actions: ['roapEstablished'],
+              },
+              E_SEND_ROAP_ANSWER: {
+                target: 'S_SEND_ROAP_ANSWER',
+                actions: ['outgoingRoapAnswer'],
+              },
+              E_ROAP_ERROR: {
+                target: 'S_ROAP_ERROR',
+                actions: ['roapError'],
+              },
+            },
+          },
+          S_ROAP_OK: {
+            on: {
+              E_RECV_ROAP_OFFER_REQUEST: {
+                target: 'S_RECV_ROAP_OFFER_REQUEST',
+                actions: ['incomingRoapOfferRequest'],
+              },
+              E_RECV_ROAP_OFFER: {
+                target: 'S_RECV_ROAP_OFFER',
+                actions: ['incomingRoapOffer'],
+              },
+              E_ROAP_OK: {
+                target: 'S_ROAP_OK',
+                actions: ['roapEstablished'],
+              },
+              E_SEND_ROAP_OFFER: {
+                target: 'S_SEND_ROAP_OFFER',
+                actions: ['outgoingRoapOffer'],
+              },
+              E_ROAP_ERROR: {
+                target: 'S_ROAP_ERROR',
+                actions: ['roapError'],
+              },
+              E_ROAP_TEARDOWN: {
+                target: 'S_ROAP_TEARDOWN',
+              },
+            },
+          },
+          S_ROAP_ERROR: {
+            on: {
+              E_ROAP_TEARDOWN: {
+                target: 'S_ROAP_TEARDOWN',
+              },
+              E_RECV_ROAP_OFFER_REQUEST: {
+                target: 'S_RECV_ROAP_OFFER_REQUEST',
+                actions: ['incomingRoapOfferRequest'],
+              },
+              E_RECV_ROAP_OFFER: {
+                target: 'S_RECV_ROAP_OFFER',
+                actions: ['incomingRoapOffer'],
+              },
+              E_RECV_ROAP_ANSWER: {
+                target: 'S_RECV_ROAP_ANSWER',
+                actions: ['incomingRoapAnswer'],
+              },
+              E_ROAP_OK: {
+                target: 'S_ROAP_OK',
+                actions: ['roapEstablished'],
+              },
+            },
+          },
+          S_ROAP_TEARDOWN: {
+            type: 'final',
+          },
+        },
+      },
+      {
+        actions: {
+          /**
+           * .
+           *
+           * @param context -.
+           * @param event -.
+           */
+          incomingRoapOffer: (context: MediaContext, event: RoapEvent) =>
+            this.handleIncomingRoapOffer(context, event),
+          /**
+           * .
+           *
+           * @param context -.
+           * @param event -.
+           */
+          incomingRoapAnswer: (context: MediaContext, event: RoapEvent) =>
+            this.handleIncomingRoapAnswer(context, event),
+          /**
+           * .
+           *
+           * @param context -.
+           * @param event -.
+           */
+          incomingRoapOfferRequest: (context: MediaContext, event: RoapEvent) =>
+            this.handleIncomingRoapOfferRequest(context, event),
+          /**
+           * .
+           *
+           * @param context -.
+           * @param event -.
+           */
+          outgoingRoapOffer: (context: MediaContext, event: RoapEvent) =>
+            this.handleOutgoingRoapOffer(context, event),
+          /**
+           * .
+           *
+           * @param context -.
+           * @param event -.
+           */
+          outgoingRoapAnswer: (context: MediaContext, event: RoapEvent) =>
+            this.handleOutgoingRoapAnswer(context, event),
+          /**
+           * .
+           *
+           * @param context -.
+           * @param event -.
+           */
+          roapEstablished: (context: MediaContext, event: RoapEvent) =>
+            this.handleRoapEstablished(context, event),
+          /**
+           * .
+           *
+           * @param context -.
+           * @param event -.
+           */
+          roapError: (context: MediaContext, event: RoapEvent) =>
+            this.handleRoapError(context, event),
+        },
+      }
+    );
+
+    this.callStateMachine = interpret(callMachine)
+      .onTransition((state, event) => {
+        log.log(`Call StateMachine:- state=${state.value}, event=${JSON.stringify(event.type)}`, {
+          file: CALL_FILE,
+          method: METHODS.CONSTRUCTOR,
+        });
+        if (state.value !== 'S_UNKNOWN') {
+          this.metricManager.submitCallMetric(
+            METRIC_EVENT.CALL,
+            state.value.toString(),
+            METRIC_TYPE.BEHAVIORAL,
+            this.callId,
+            this.correlationId,
+            undefined
+          );
+        }
+      })
+      .start();
+
+    this.mediaStateMachine = interpret(mediaMachine)
+      .onTransition((state, event) => {
+        log.log(`Media StateMachine:- state=${state.value}, event=${JSON.stringify(event.type)}`, {
+          file: CALL_FILE,
+          method: METHODS.CONSTRUCTOR,
+        });
+        if (state.value !== 'S_ROAP_ERROR') {
+          this.metricManager.submitMediaMetric(
+            METRIC_EVENT.MEDIA,
+            state.value.toString(),
+            METRIC_TYPE.BEHAVIORAL,
+            this.callId,
+            this.correlationId,
+            this.localRoapMessage.sdp,
+            this.remoteRoapMessage?.sdp,
+            undefined
+          );
+        }
+      })
+      .start();
+    this.muted = false;
+  }
+
+  /**
+   * Handle incoming Call setups.
+   *
+   * @param event - Call Events.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private handleIncomingCallSetup(event: CallEvent) {
+    log.info(`${METHOD_START_MESSAGE} with: ${this.getCorrelationId()}`, {
+      file: CALL_FILE,
+      method: METHODS.HANDLE_INCOMING_CALL_SETUP,
+    });
+
+    this.sendCallStateMachineEvt({type: 'E_SEND_CALL_ALERTING'});
+  }
+
+  /**
+   * Handle outgoing Call setups.
+   * The handler sends a Post Message to the remote with ROAP body
+   * as offer. We also set the callId here based on the response received.
+   *
+   * @param event - Call Events.
+   */
+  private async handleOutgoingCallSetup(event: CallEvent) {
+    log.info(`${METHOD_START_MESSAGE} with: ${this.getCorrelationId()}`, {
+      file: CALL_FILE,
+      method: METHODS.HANDLE_OUTGOING_CALL_SETUP,
+    });
+
+    const message = event.data as RoapMessage;
+
+    try {
+      const response = await this.post(message);
+      log.info(`Response: ${JSON.stringify(response)}`, {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_OUTGOING_CALL_SETUP,
+      });
+
+      log.info(`Response code: ${response.statusCode}`, {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_OUTGOING_CALL_SETUP,
+      });
+      this.setCallId(response.body.callId);
+      log.log(`Call setup successful for callId: ${response.body.callId}`, {
+        file: CALL_FILE,
+        method: this.handleOutgoingCallSetup.name,
+      });
+    } catch (e) {
+      log.error(`Failed to setup the call: ${JSON.stringify(e)}`, {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_OUTGOING_CALL_SETUP,
+      });
+      const errData = e as MobiusCallResponse;
+
+      handleCallErrors(
+        (error: CallError) => {
+          this.emit(CALL_EVENT_KEYS.CALL_ERROR, error);
+          this.submitCallErrorMetric(error);
+          this.sendCallStateMachineEvt({type: 'E_UNKNOWN', data: errData});
+        },
+        ERROR_LAYER.CALL_CONTROL,
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        /* istanbul ignore next */ (interval: number) => undefined,
+        this.getCorrelationId(),
+        errData,
+        METHODS.HANDLE_OUTGOING_CALL_SETUP,
+        CALL_FILE
+      );
+
+      await uploadLogs({
+        correlationId: this.correlationId,
+        callId: this.callId,
+        broadworksCorrelationInfo: this.broadworksCorrelationInfo,
+      });
+    }
+  }
+
+  /**
+   * Handle Call Hold.
+   *
+   * @param event - Call Events.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private async handleCallHold(event: CallEvent) {
+    log.info(`${METHOD_START_MESSAGE} with: ${this.getCorrelationId()}`, {
+      file: CALL_FILE,
+      method: METHODS.HANDLE_CALL_HOLD,
+    });
+
+    try {
+      const response = await this.postSSRequest(undefined, SUPPLEMENTARY_SERVICES.HOLD);
+
+      log.log(`Response code: ${response.statusCode}`, {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_CALL_HOLD,
+      });
+
+      /*
+       *  Avoid setting http response timeout if held event is already
+       *  received from Mobius and forwarded towards calling client
+       */
+      if (this.isHeld() === false) {
+        this.supplementaryServicesTimer = setTimeout(async () => {
+          const errorContext = {file: CALL_FILE, method: METHODS.HANDLE_CALL_HOLD};
+
+          log.warn('Hold response timed out', {
+            file: CALL_FILE,
+            method: METHODS.HANDLE_CALL_HOLD,
+          });
+
+          const callError = createCallError(
+            'An error occurred while placing the call on hold. Wait a moment and try again.',
+            errorContext as ErrorContext,
+            ERROR_TYPE.TIMEOUT,
+            this.getCorrelationId(),
+            ERROR_LAYER.CALL_CONTROL
+          );
+
+          this.emit(CALL_EVENT_KEYS.HOLD_ERROR, callError);
+          this.submitCallErrorMetric(callError);
+        }, SUPPLEMENTARY_SERVICES_TIMEOUT);
+      }
+    } catch (e) {
+      log.error(`Failed to put the call on hold: ${JSON.stringify(e)}`, {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_CALL_HOLD,
+      });
+      const errData = e as MobiusCallResponse;
+
+      handleCallErrors(
+        (error: CallError) => {
+          this.emit(CALL_EVENT_KEYS.HOLD_ERROR, error);
+          this.submitCallErrorMetric(error);
+          this.sendCallStateMachineEvt({type: 'E_CALL_ESTABLISHED', data: errData});
+        },
+        ERROR_LAYER.CALL_CONTROL,
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        /* istanbul ignore next */ (interval: number) => undefined,
+        this.getCorrelationId(),
+        errData,
+        METHODS.HANDLE_CALL_HOLD,
+        CALL_FILE
+      );
+
+      await uploadLogs({
+        correlationId: this.correlationId,
+        callId: this.callId,
+        broadworksCorrelationInfo: this.broadworksCorrelationInfo,
+      });
+    }
+  }
+
+  /**
+   * Handle Call Resume.
+   *
+   * @param event - Call Events.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private async handleCallResume(event: CallEvent) {
+    log.info(`${METHOD_START_MESSAGE} with: ${this.getCorrelationId()}`, {
+      file: CALL_FILE,
+      method: METHODS.HANDLE_CALL_RESUME,
+    });
+
+    try {
+      const response = await this.postSSRequest(undefined, SUPPLEMENTARY_SERVICES.RESUME);
+
+      log.log(`Response code: ${response.statusCode}`, {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_CALL_RESUME,
+      });
+
+      /*
+       *  Avoid setting http response timeout if connected event is already
+       *  received from Mobius on resuming the call and forwarded towards calling client
+       */
+      if (this.isHeld() === true) {
+        this.supplementaryServicesTimer = setTimeout(async () => {
+          const errorContext = {file: CALL_FILE, method: METHODS.HANDLE_CALL_RESUME};
+
+          log.warn('Resume response timed out', {
+            file: CALL_FILE,
+            method: METHODS.HANDLE_CALL_RESUME,
+          });
+
+          const callError = createCallError(
+            'An error occurred while resuming the call. Wait a moment and try again.',
+            errorContext as ErrorContext,
+            ERROR_TYPE.TIMEOUT,
+            this.getCorrelationId(),
+            ERROR_LAYER.CALL_CONTROL
+          );
+
+          this.emit(CALL_EVENT_KEYS.RESUME_ERROR, callError);
+          this.submitCallErrorMetric(callError);
+        }, SUPPLEMENTARY_SERVICES_TIMEOUT);
+      }
+    } catch (e) {
+      log.error(`Failed to resume the call: ${JSON.stringify(e)}`, {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_CALL_RESUME,
+      });
+      const errData = e as MobiusCallResponse;
+
+      handleCallErrors(
+        (error: CallError) => {
+          this.emit(CALL_EVENT_KEYS.RESUME_ERROR, error);
+          this.submitCallErrorMetric(error);
+          this.sendCallStateMachineEvt({type: 'E_CALL_ESTABLISHED', data: errData});
+        },
+        ERROR_LAYER.CALL_CONTROL,
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        /* istanbul ignore next */ (interval: number) => undefined,
+        this.getCorrelationId(),
+        errData,
+        METHODS.HANDLE_CALL_RESUME,
+        CALL_FILE
+      );
+
+      await uploadLogs({
+        correlationId: this.correlationId,
+        callId: this.callId,
+        broadworksCorrelationInfo: this.broadworksCorrelationInfo,
+      });
+    }
+  }
+
+  /**
+   * Handle incoming Call Progress.
+   *
+   * @param event - Call Events.
+   */
+  private handleIncomingCallProgress(event: CallEvent) {
+    log.info(`${METHOD_START_MESSAGE} with: ${this.getCorrelationId()}`, {
+      file: CALL_FILE,
+      method: METHODS.HANDLE_INCOMING_CALL_PROGRESS,
+    });
+    const data = event.data as MobiusCallData;
+
+    if (data?.callProgressData?.inbandMedia) {
+      log.log('Inband media present. Setting Early Media flag', {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_INCOMING_CALL_PROGRESS,
+      });
+      this.earlyMedia = true;
+    } else {
+      log.log('Inband media not present.', {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_INCOMING_CALL_PROGRESS,
+      });
+    }
+
+    if (data?.callerId) {
+      log.info('Processing Caller-Id data', {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_INCOMING_CALL_PROGRESS,
+      });
+      this.startCallerIdResolution(data.callerId);
+    }
+    this.emit(CALL_EVENT_KEYS.PROGRESS, this.correlationId);
+  }
+
+  /**
+   * Handle incoming Call Progress.
+   *
+   * @param context
+   * @param event - Roap Events.
+   */
+  private handleIncomingRoapOfferRequest(context: MediaContext, event: RoapEvent) {
+    log.info(`${METHOD_START_MESSAGE} with: ${this.getCorrelationId()}`, {
+      file: CALL_FILE,
+      method: METHODS.HANDLE_INCOMING_ROAP_OFFER_REQUEST,
+    });
+    const message = event.data as RoapMessage;
+
+    if (!this.mediaConnection) {
+      log.info('Media connection is not up, buffer the remote Offer Request for later handling', {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_INCOMING_ROAP_OFFER_REQUEST,
+      });
+
+      this.seq = message.seq;
+      log.info(`Setting Sequence No: ${this.seq}`, {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_INCOMING_ROAP_OFFER_REQUEST,
+      });
+
+      this.remoteRoapMessage = message;
+    } else if (this.receivedRoapOKSeq === message.seq - 2) {
+      log.info('Waiting for Roap OK, buffer the remote Offer Request for later handling', {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_INCOMING_ROAP_OFFER_REQUEST,
+      });
+
+      this.remoteRoapMessage = message;
+    } else {
+      message.seq = this.seq + 1;
+      this.seq = message.seq;
+      this.mediaConnection.roapMessageReceived(message);
+    }
+  }
+
+  /**
+   * Handle Outgoing Call Progress.
+   *
+   * @param event - Call Events.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private async handleOutgoingCallAlerting(event: CallEvent) {
+    log.info(`${METHOD_START_MESSAGE} with: ${this.getCorrelationId()}`, {
+      file: CALL_FILE,
+      method: METHODS.HANDLE_OUTGOING_CALL_ALERTING,
+    });
+
+    try {
+      const res = await this.patch(MobiusCallState.ALERTING);
+
+      log.log(`PATCH response: ${res.statusCode}`, {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_OUTGOING_CALL_ALERTING,
+      });
+    } catch (e) {
+      log.error(`Failed to signal call progression: ${JSON.stringify(e)}`, {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_OUTGOING_CALL_ALERTING,
+      });
+      const errData = e as MobiusCallResponse;
+
+      handleCallErrors(
+        (error: CallError) => {
+          this.emit(CALL_EVENT_KEYS.CALL_ERROR, error);
+          this.submitCallErrorMetric(error);
+          this.sendCallStateMachineEvt({type: 'E_UNKNOWN', data: errData});
+        },
+        ERROR_LAYER.CALL_CONTROL,
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        /* istanbul ignore next */ (interval: number) => undefined,
+        this.getCorrelationId(),
+        errData,
+        METHODS.HANDLE_OUTGOING_CALL_ALERTING,
+        CALL_FILE
+      );
+
+      await uploadLogs({
+        correlationId: this.correlationId,
+        callId: this.callId,
+        broadworksCorrelationInfo: this.broadworksCorrelationInfo,
+      });
+    }
+  }
+
+  /**
+   * Handle incoming Call Connect.
+   *
+   * @param event - Call Events.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private handleIncomingCallConnect(event: CallEvent) {
+    log.info(`${METHOD_START_MESSAGE} with: ${this.getCorrelationId()}`, {
+      file: CALL_FILE,
+      method: METHODS.HANDLE_INCOMING_CALL_CONNECT,
+    });
+    this.emit(CALL_EVENT_KEYS.CONNECT, this.correlationId);
+
+    /* In case of Early Media , media negotiations would have already started
+     * So we can directly go to call established state */
+
+    if (this.earlyMedia || this.mediaNegotiationCompleted) {
+      this.mediaNegotiationCompleted = false;
+      this.sendCallStateMachineEvt({type: 'E_CALL_ESTABLISHED'});
+    }
+  }
+
+  /**
+   * Handle outgoing Call Connect.
+   *
+   * @param event - Call Events.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private async handleOutgoingCallConnect(event: CallEvent) {
+    log.info(`${METHOD_START_MESSAGE} with: ${this.getCorrelationId()}`, {
+      file: CALL_FILE,
+      method: METHODS.HANDLE_OUTGOING_CALL_CONNECT,
+    });
+
+    /* We should have received an Offer by now */
+    if (!this.remoteRoapMessage) {
+      log.warn('Offer not yet received from remote end... Exiting', {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_OUTGOING_CALL_CONNECT,
+      });
+
+      return;
+    }
+
+    try {
+      /* Start Offer/Answer as we might have buffered the offer by now */
+      this.mediaConnection.roapMessageReceived(this.remoteRoapMessage);
+
+      /* send call_connect PATCH */
+      const res = await this.patch(MobiusCallState.CONNECTED);
+
+      log.log(`PATCH response: ${res.statusCode}`, {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_OUTGOING_CALL_CONNECT,
+      });
+    } catch (e) {
+      log.error(`Failed to connect the call: ${JSON.stringify(e)}`, {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_OUTGOING_CALL_CONNECT,
+      });
+      const errData = e as MobiusCallResponse;
+
+      handleCallErrors(
+        (error: CallError) => {
+          this.emit(CALL_EVENT_KEYS.CALL_ERROR, error);
+          this.submitCallErrorMetric(error);
+          this.sendCallStateMachineEvt({type: 'E_UNKNOWN', data: errData});
+        },
+        ERROR_LAYER.CALL_CONTROL,
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        /* istanbul ignore next */ (interval: number) => undefined,
+        this.getCorrelationId(),
+        errData,
+        METHODS.HANDLE_OUTGOING_CALL_CONNECT,
+        CALL_FILE
+      );
+
+      await uploadLogs({
+        correlationId: this.correlationId,
+        callId: this.callId,
+        broadworksCorrelationInfo: this.broadworksCorrelationInfo,
+      });
+    }
+  }
+
+  /**
+   * Handle incoming Call Disconnect.
+   *
+   * @param event - Call Events.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private async handleIncomingCallDisconnect(event: CallEvent) {
+    log.info(`${METHOD_START_MESSAGE} with: ${this.getCorrelationId()}`, {
+      file: CALL_FILE,
+      method: METHODS.HANDLE_INCOMING_CALL_DISCONNECT,
+    });
+
+    this.emit(CALL_EVENT_KEYS.DISCONNECT, this.correlationId);
+
+    this.setDisconnectReason();
+
+    try {
+      const response = await this.delete();
+
+      log.log(`Response code: ${response.statusCode}`, {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_INCOMING_CALL_DISCONNECT,
+      });
+    } catch (e) {
+      log.warn(`Failed to delete the call: ${JSON.stringify(e)}`, {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_INCOMING_CALL_DISCONNECT,
+      });
+
+      uploadLogs({
+        correlationId: this.correlationId,
+        callId: this.callId,
+        broadworksCorrelationInfo: this.broadworksCorrelationInfo,
+      });
+    }
+
+    this.deleteCb(this.correlationId);
+
+    /* Clear the stream listeners */
+    this.unregisterListeners();
+
+    /* istanbul ignore else */
+    if (this.sessionTimer) {
+      clearInterval(this.sessionTimer);
+    }
+
+    /* istanbul ignore else */
+    if (this.mediaConnection) {
+      this.mediaConnection.close();
+      log.info('Closing media channel', {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_OUTGOING_CALL_DISCONNECT,
+      });
+    }
+
+    this.sendMediaStateMachineEvt({type: 'E_ROAP_TEARDOWN'});
+    this.sendCallStateMachineEvt({type: 'E_CALL_CLEARED'});
+  }
+
+  /**
+   * Handle outgoing Call Disconnect.
+   *
+   * @param event - Call Events.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private async handleOutgoingCallDisconnect(event: CallEvent) {
+    log.info(`${METHOD_START_MESSAGE} with: ${this.getCorrelationId()}`, {
+      file: CALL_FILE,
+      method: METHODS.HANDLE_OUTGOING_CALL_DISCONNECT,
+    });
+
+    this.setDisconnectReason();
+
+    try {
+      const response = await this.delete();
+
+      log.log(`Response code: ${response.statusCode}`, {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_OUTGOING_CALL_DISCONNECT,
+      });
+
+      log.log(`Call disconnected successfully: ${this.correlationId}`, {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_OUTGOING_CALL_DISCONNECT,
+      });
+    } catch (e) {
+      log.warn('Failed to delete the call', {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_OUTGOING_CALL_DISCONNECT,
+      });
+
+      uploadLogs({
+        correlationId: this.correlationId,
+        callId: this.callId,
+        broadworksCorrelationInfo: this.broadworksCorrelationInfo,
+      });
+    }
+
+    this.deleteCb(this.correlationId);
+
+    /* Clear the stream listeners */
+    this.unregisterListeners();
+
+    /* istanbul ignore else */
+    if (this.sessionTimer) {
+      clearInterval(this.sessionTimer);
+    }
+
+    /* istanbul ignore else */
+    if (this.mediaConnection) {
+      this.mediaConnection.close();
+      log.info('Closing media channel', {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_OUTGOING_CALL_DISCONNECT,
+      });
+    }
+
+    this.sendMediaStateMachineEvt({type: 'E_ROAP_TEARDOWN'});
+    this.sendCallStateMachineEvt({type: 'E_CALL_CLEARED'});
+  }
+
+  private callKeepaliveRetryCallback = (interval: number) => {
+    if (this.callKeepaliveRetryCount === MAX_CALL_KEEPALIVE_RETRY_COUNT) {
+      log.warn(
+        `Max keepalive retry attempts reached. Aborting call keepalive for callId: ${this.callId}`,
+        {
+          file: CALL_FILE,
+          method: 'keepaliveRetryCallback',
+        }
+      );
+
+      return;
+    }
+
+    this.callKeepaliveRetryCount += 1;
+
+    setTimeout(async () => {
+      try {
+        await this.postStatus();
+        this.scheduleCallKeepaliveInterval();
+      } catch (err: unknown) {
+        await this.handleCallKeepaliveError(err);
+      }
+    }, interval * 1000);
+  };
+
+  private handleCallKeepaliveError = async (err: unknown) => {
+    const error = <WebexRequestPayload>err;
+
+    /* We are clearing the timer here as all are error scenarios. Only scenario where
+     * timer reset won't be required is 503 with retry after. But that case will
+     * be handled automatically as Mobius will also reset timer when we post status
+     * in retry-after scenario.
+     */
+    /* istanbul ignore next */
+    if (this.sessionTimer) {
+      clearInterval(this.sessionTimer);
+    }
+
+    const abort = await handleCallErrors(
+      (callError: CallError) => {
+        this.emit(CALL_EVENT_KEYS.CALL_ERROR, callError);
+        this.submitCallErrorMetric(callError);
+      },
+      ERROR_LAYER.CALL_CONTROL,
+      this.callKeepaliveRetryCallback,
+      this.getCorrelationId(),
+      error,
+      'handleCallEstablished',
+      CALL_FILE
+    );
+
+    if (abort) {
+      this.sendCallStateMachineEvt({type: 'E_SEND_CALL_DISCONNECT'});
+      this.emit(CALL_EVENT_KEYS.DISCONNECT, this.getCorrelationId());
+      this.callKeepaliveRetryCount = 0;
+    }
+
+    await uploadLogs({
+      correlationId: this.correlationId,
+      callId: this.callId,
+      broadworksCorrelationInfo: this.broadworksCorrelationInfo,
+    });
+  };
+
+  private scheduleCallKeepaliveInterval = () => {
+    const loggerContext = {
+      file: CALL_FILE,
+      method: 'scheduleCallKeepaliveInterval',
+    };
+
+    this.sessionTimer = setInterval(async () => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const res = await this.postStatus();
+
+        log.info(`Session refresh successful`, loggerContext);
+      } catch (err: unknown) {
+        await this.handleCallKeepaliveError(err);
+      }
+    }, DEFAULT_SESSION_TIMER);
+  };
+
+  /**
+   * Handle Call Established - Roap related negotiations.
+   *
+   * @param event - Call Events.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private handleCallEstablished(event: CallEvent) {
+    const loggerContext = {
+      file: CALL_FILE,
+      method: METHODS.HANDLE_CALL_ESTABLISHED,
+    };
+
+    log.info(`${METHOD_START_MESSAGE} with: ${this.getCorrelationId()}`, loggerContext);
+
+    this.emit(CALL_EVENT_KEYS.ESTABLISHED, this.correlationId);
+
+    /* Reset Early dialog parameters */
+    this.earlyMedia = false;
+
+    this.connected = true;
+
+    this.scheduleCallKeepaliveInterval();
+  }
+
+  /**
+   * Handle Unknown events.
+   *
+   * @param event - Call Events.
+   */
+  private async handleUnknownState(event: CallEvent) {
+    log.info(`${METHOD_START_MESSAGE} with: ${this.getCorrelationId()}`, {
+      file: CALL_FILE,
+      method: METHODS.HANDLE_UNKNOWN_STATE,
+    });
+
+    /* We are handling errors at the source , in this state we just log and
+     * clear the resources
+     */
+
+    const eventData = event.data as {media: boolean};
+
+    if (!eventData?.media) {
+      log.warn('Call failed due to signalling issue', {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_UNKNOWN_STATE,
+      });
+    }
+
+    /* We need to clear the call at Mobius too. For delete failure
+     * error handling is not required
+     */
+
+    try {
+      this.setDisconnectReason();
+      const response = await this.delete();
+
+      log.log(`Response code: ${response.statusCode}`, {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_UNKNOWN_STATE,
+      });
+    } catch (e) {
+      log.warn('Failed to delete the call', {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_UNKNOWN_STATE,
+      });
+
+      uploadLogs({
+        correlationId: this.correlationId,
+        callId: this.callId,
+        broadworksCorrelationInfo: this.broadworksCorrelationInfo,
+      });
+    }
+
+    this.deleteCb(this.correlationId);
+
+    if (this.sessionTimer) {
+      clearInterval(this.sessionTimer);
+    }
+
+    if (this.mediaConnection) {
+      this.mediaConnection.close();
+      log.info('Closing media channel', {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_UNKNOWN_STATE,
+      });
+    }
+    this.sendMediaStateMachineEvt({type: 'E_ROAP_TEARDOWN'});
+    this.sendCallStateMachineEvt({type: 'E_CALL_CLEARED'});
+  }
+
+  /**
+   * Returns an error emitter callback method for handleCallErrors which can be used during
+   * midcall and call setup scenarios.
+   * Emits Call errors for UI Client
+   * Sends call error metrics
+   * Handles further state machine changes.
+   *
+   * @param errData - Instance of CallError.
+   */
+  private getEmitterCallback(errData: MobiusCallResponse) {
+    return (error: CallError) => {
+      switch (this.callStateMachine.state.value) {
+        case 'S_CALL_HOLD':
+          this.emit(CALL_EVENT_KEYS.HOLD_ERROR, error);
+          if (this.supplementaryServicesTimer) {
+            clearTimeout(this.supplementaryServicesTimer);
+            this.supplementaryServicesTimer = undefined;
+          }
+          this.submitCallErrorMetric(error);
+          this.sendCallStateMachineEvt({type: 'E_CALL_ESTABLISHED', data: errData});
+
+          return;
+        case 'S_CALL_RESUME':
+          this.emit(CALL_EVENT_KEYS.RESUME_ERROR, error);
+          this.submitCallErrorMetric(error);
+          this.sendCallStateMachineEvt({type: 'E_CALL_ESTABLISHED', data: errData});
+
+          return;
+        default:
+          this.emit(CALL_EVENT_KEYS.CALL_ERROR, error);
+          this.submitCallErrorMetric(error);
+          /* Disconnect call if it's not a midcall case */
+          /* istanbul ignore else */
+          if (!this.connected) {
+            this.sendMediaStateMachineEvt({type: 'E_ROAP_ERROR', data: errData});
+          }
+      }
+    };
+  }
+
+  /**
+   * Handle Roap Established events.
+   *
+   * For outbound MediaOk , the message will be truthy as we need to send ROAP OK .
+   * For inbound MediaOK , we report it to Media-SDK  and transition our state.
+   * Both the cases should transition to Call Established state.
+   *
+   * @param context -.
+   * @param event - Roap Events.
+   */
+  private async handleRoapEstablished(context: MediaContext, event: RoapEvent) {
+    log.info(`${METHOD_START_MESSAGE} with: ${this.getCorrelationId()}`, {
+      file: CALL_FILE,
+      method: METHODS.HANDLE_ROAP_ESTABLISHED,
+    });
+
+    const {received, message} = event.data as {received: boolean; message: RoapMessage};
+
+    this.receivedRoapOKSeq = message.seq;
+
+    if (!received) {
+      log.info('Sending Media Ok to the remote End', {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_ROAP_ESTABLISHED,
+      });
+
+      try {
+        if (
+          this.callStateMachine.state.value === 'S_RECV_CALL_PROGRESS' ||
+          this.callStateMachine.state.value === 'S_SEND_CALL_SETUP'
+        ) {
+          log.info(
+            'Media negotiation completed before call connect. Setting media negotiation completed flag.',
+            {
+              file: CALL_FILE,
+              method: METHODS.HANDLE_ROAP_ESTABLISHED,
+            }
+          );
+          this.mediaNegotiationCompleted = true;
+        }
+        message.seq = this.seq;
+        const res = await this.postMedia(message);
+
+        log.log(`Response code: ${res.statusCode}`, {
+          file: CALL_FILE,
+          method: METHODS.HANDLE_ROAP_ESTABLISHED,
+        });
+        /* istanbul ignore else */
+        if (!this.earlyMedia && !this.mediaNegotiationCompleted) {
+          this.sendCallStateMachineEvt({type: 'E_CALL_ESTABLISHED'});
+        }
+      } catch (err) {
+        log.warn('Failed to process MediaOk request', {
+          file: CALL_FILE,
+          method: METHODS.HANDLE_ROAP_ESTABLISHED,
+        });
+        const errData = err as MobiusCallResponse;
+
+        handleCallErrors(
+          this.getEmitterCallback(errData),
+          ERROR_LAYER.MEDIA,
+          (interval: number) => {
+            /* Start retry if only it is a midcall case */
+            /* istanbul ignore else */
+            if (this.connected) {
+              setTimeout(() => {
+                this.sendMediaStateMachineEvt({type: 'E_ROAP_OK', data: event.data});
+              }, interval * 1000);
+            }
+          },
+          this.getCorrelationId(),
+          errData,
+          this.handleRoapEstablished.name,
+          CALL_FILE
+        );
+
+        await uploadLogs({
+          correlationId: this.correlationId,
+          callId: this.callId,
+          broadworksCorrelationInfo: this.broadworksCorrelationInfo,
+        });
+      }
+    } else {
+      log.info('Notifying internal-media-core about ROAP OK message', {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_ROAP_ESTABLISHED,
+      });
+      message.seq = this.seq;
+
+      /* istanbul ignore else */
+      if (this.mediaConnection) {
+        this.mediaConnection.roapMessageReceived(message);
+      }
+      /* istanbul ignore else */
+      if (!this.earlyMedia) {
+        this.sendCallStateMachineEvt({type: 'E_CALL_ESTABLISHED'});
+      }
+
+      if (this.remoteRoapMessage && this.remoteRoapMessage.seq > this.seq) {
+        if (this.remoteRoapMessage.messageType === 'OFFER_REQUEST') {
+          this.sendMediaStateMachineEvt({
+            type: 'E_RECV_ROAP_OFFER_REQUEST',
+            data: this.remoteRoapMessage,
+          });
+        } else if (this.remoteRoapMessage.messageType === 'OFFER') {
+          this.sendMediaStateMachineEvt({type: 'E_RECV_ROAP_OFFER', data: this.remoteRoapMessage});
+        }
+      }
+    }
+  }
+
+  /**
+   * Handle Roap Error events.
+   *
+   * @param context
+   * @param event - Roap Events.
+   */
+  private async handleRoapError(context: MediaContext, event: RoapEvent) {
+    log.info(`${METHOD_START_MESSAGE} with: ${this.getCorrelationId()}`, {
+      file: CALL_FILE,
+      method: METHODS.HANDLE_ROAP_ERROR,
+    });
+
+    /* if we receive ROAP_ERROR from internal-media-core , we post it to Mobius */
+
+    const message = event.data as RoapMessage;
+
+    /* istanbul ignore else */
+    if (message && message.messageType === 'ERROR') {
+      try {
+        const res = await this.postMedia(message);
+
+        log.info(`Response code: ${res.statusCode}`, {
+          file: CALL_FILE,
+          method: METHODS.HANDLE_ROAP_ERROR,
+        });
+      } catch (err) {
+        log.warn('Failed to communicate ROAP error to Webex Calling', {
+          file: CALL_FILE,
+          method: METHODS.HANDLE_ROAP_ERROR,
+        });
+        const errData = err as MobiusCallResponse;
+
+        handleCallErrors(
+          (error: CallError) => {
+            this.emit(CALL_EVENT_KEYS.CALL_ERROR, error);
+            this.submitCallErrorMetric(error);
+          },
+          ERROR_LAYER.MEDIA,
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          /* istanbul ignore next */ (interval: number) => undefined,
+          this.getCorrelationId(),
+          errData,
+          this.handleRoapError.name,
+          CALL_FILE
+        );
+
+        await uploadLogs({
+          correlationId: this.correlationId,
+          callId: this.callId,
+          broadworksCorrelationInfo: this.broadworksCorrelationInfo,
+        });
+      }
+    }
+
+    /* Only disconnect calls that are not yet connected yet */
+
+    if (!this.connected) {
+      log.warn('Call failed due to media issue', {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_ROAP_ERROR,
+      });
+
+      this.sendCallStateMachineEvt({type: 'E_UNKNOWN', data: {media: true}});
+    }
+  }
+
+  /**
+   * Handle Outgoing Roap Offer events.
+   *
+   * @param context
+   * @param event - Roap Events.
+   */
+  private async handleOutgoingRoapOffer(context: MediaContext, event: RoapEvent) {
+    log.info(`${METHOD_START_MESSAGE} with: ${this.getCorrelationId()}`, {
+      file: CALL_FILE,
+      method: METHODS.HANDLE_OUTGOING_ROAP_OFFER,
+    });
+
+    const message = event.data as RoapMessage;
+
+    if (!message?.sdp) {
+      log.info('Initializing Offer...', {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_OUTGOING_ROAP_OFFER,
+      });
+      this.mediaConnection.initiateOffer();
+
+      return;
+    }
+
+    /* If we are here , that means we have a message to send.. */
+
+    try {
+      const res = await this.postMedia(message);
+
+      log.log(`Response code: ${res.statusCode}`, {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_OUTGOING_ROAP_OFFER,
+      });
+    } catch (err) {
+      log.warn('Failed to process MediaOk request', {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_OUTGOING_ROAP_OFFER,
+      });
+      const errData = err as MobiusCallResponse;
+
+      handleCallErrors(
+        this.getEmitterCallback(errData),
+        ERROR_LAYER.MEDIA,
+        (interval: number) => {
+          /* Start retry if only it is a midcall case */
+          if (this.connected) {
+            setTimeout(() => {
+              this.sendMediaStateMachineEvt({type: 'E_SEND_ROAP_OFFER', data: event.data});
+            }, interval * 1000);
+          }
+        },
+        this.getCorrelationId(),
+        errData,
+        METHODS.HANDLE_OUTGOING_ROAP_OFFER,
+        CALL_FILE
+      );
+
+      await uploadLogs({
+        correlationId: this.correlationId,
+        callId: this.callId,
+        broadworksCorrelationInfo: this.broadworksCorrelationInfo,
+      });
+    }
+  }
+
+  /**
+   * Handle Outgoing Roap Answer events.
+   *
+   * @param context
+   * @param event - Roap Events.
+   */
+  private async handleOutgoingRoapAnswer(context: MediaContext, event: RoapEvent) {
+    log.info(`${METHOD_START_MESSAGE} with: ${this.getCorrelationId()}`, {
+      file: CALL_FILE,
+      method: METHODS.HANDLE_OUTGOING_ROAP_ANSWER,
+    });
+
+    const message = event.data as RoapMessage;
+
+    try {
+      message.seq = this.seq;
+      const res = await this.postMedia(message);
+
+      log.log(`Response code: ${res.statusCode}`, {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_OUTGOING_ROAP_ANSWER,
+      });
+    } catch (err) {
+      log.warn('Failed to send MediaAnswer request', {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_OUTGOING_ROAP_ANSWER,
+      });
+      const errData = err as MobiusCallResponse;
+
+      handleCallErrors(
+        this.getEmitterCallback(errData),
+        ERROR_LAYER.MEDIA,
+        (interval: number) => {
+          /* Start retry if only it is a midcall case */
+          if (this.connected) {
+            setTimeout(() => {
+              this.sendMediaStateMachineEvt({type: 'E_SEND_ROAP_ANSWER', data: event.data});
+            }, interval * 1000);
+          }
+        },
+        this.getCorrelationId(),
+        errData,
+        METHODS.HANDLE_OUTGOING_ROAP_ANSWER,
+        CALL_FILE
+      );
+
+      await uploadLogs({
+        correlationId: this.correlationId,
+        callId: this.callId,
+        broadworksCorrelationInfo: this.broadworksCorrelationInfo,
+      });
+    }
+  }
+
+  /**
+   * Handle Incoming Roap Offer events.
+   *
+   * @param context
+   * @param event - Roap Events.
+   */
+  private handleIncomingRoapOffer(context: MediaContext, event: RoapEvent) {
+    log.info(`${METHOD_START_MESSAGE} with: ${this.getCorrelationId()}`, {
+      file: CALL_FILE,
+      method: METHODS.HANDLE_INCOMING_ROAP_OFFER,
+    });
+
+    const message = event.data as RoapMessage;
+
+    this.remoteRoapMessage = message;
+    if (!this.mediaConnection) {
+      log.info('Media connection is not up, buffer the remote offer for later handling', {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_INCOMING_ROAP_OFFER,
+      });
+      this.seq = message.seq;
+      log.info(`Setting Sequence No: ${this.seq}`, {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_INCOMING_ROAP_OFFER,
+      });
+    } else if (this.receivedRoapOKSeq === message.seq - 2) {
+      log.info('Waiting for Roap OK, buffer the remote offer for later handling', {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_INCOMING_ROAP_OFFER,
+      });
+
+      this.remoteRoapMessage = message;
+    } else {
+      log.info('Handling new offer...', {
+        file: CALL_FILE,
+        method: METHODS.HANDLE_INCOMING_ROAP_OFFER,
+      });
+      this.seq = message.seq;
+      /* istanbul ignore else */
+      if (this.mediaConnection) {
+        this.mediaConnection.roapMessageReceived(message);
+      }
+    }
+  }
+
+  /**
+   * Handle Incoming Roap Answer events.
+   *
+   * @param context
+   * @param event - Roap Events.
+   */
+  private handleIncomingRoapAnswer(context: MediaContext, event: RoapEvent) {
+    log.info(`${METHOD_START_MESSAGE} with: ${this.getCorrelationId()}`, {
+      file: CALL_FILE,
+      method: METHODS.HANDLE_INCOMING_ROAP_ANSWER,
+    });
+    const message = event.data as RoapMessage;
+
+    this.remoteRoapMessage = message;
+    message.seq = this.seq;
+    /* istanbul ignore else */
+    if (this.mediaConnection) {
+      this.mediaConnection.roapMessageReceived(message);
+    }
+  }
+
+  /**
+   * Media failed, so collect a stats report from webrtc
+   * send a webrtc telemetry dump to the configured server using the internal media core check metrics configured callback
+   * @param {String} callFrom - the function calling this function, optional.
+   * @returns {Promise<void>}
+   */
+  private forceSendStatsReport = async ({callFrom}: {callFrom?: string}) => {
+    const loggerContext = {
+      file: CALL_FILE,
+      method: METHODS.FORCE_SEND_STATS_REPORT,
+    };
+
+    try {
+      await this.mediaConnection.forceRtcMetricsSend();
+      log.info(`Successfully uploaded available webrtc telemetry statistics`, loggerContext);
+      log.info(`callFrom: ${callFrom}`, loggerContext);
+    } catch (error) {
+      const errorInfo = error as WebexRequestPayload;
+      const errorStatus = await serviceErrorCodeHandler(errorInfo, loggerContext);
+
+      log.error(
+        `Failed to upload webrtc telemetry statistics. ${JSON.stringify(errorStatus)}`,
+        loggerContext
+      );
+
+      await uploadLogs({
+        correlationId: this.correlationId,
+        callId: this.callId,
+        broadworksCorrelationInfo: this.broadworksCorrelationInfo,
+      });
+    }
+  };
+
+  /* istanbul ignore next */
+  /**
+   * Initialize Media Connection.
+   *
+   * @param settings -.
+   * @param settings.localAudioTrack - MediaStreamTrack.
+   * @param settings.debugId - String.
+   */
+  private initMediaConnection(localAudioTrack: MediaStreamTrack, debugId?: string) {
+    const mediaConnection = new RoapMediaConnection(
+      {
+        skipInactiveTransceivers: true,
+        iceServers: [],
+        iceCandidatesTimeout: ICE_CANDIDATES_TIMEOUT,
+        sdpMunging: {
+          convertPort9to0: true,
+          addContentSlides: false,
+          copyClineToSessionLevel: true,
+        },
+      },
+      {
+        localTracks: {audio: localAudioTrack},
+        direction: {
+          audio: 'sendrecv',
+          video: 'inactive',
+          screenShareVideo: 'inactive',
+        },
+      },
+      debugId || `WebexCallSDK-${this.correlationId}`,
+      (data) => this.rtcMetrics.addMetrics(data),
+      () => this.rtcMetrics.closeMetrics(),
+      () => this.rtcMetrics.sendMetricsInQueue()
+    );
+
+    this.mediaConnection = mediaConnection;
+  }
+
+  /**
+   *
+   */
+  public getDirection = (): CallDirection => this.direction;
+
+  /**
+   *
+   */
+  public getCallId = (): CallId => this.callId;
+
+  /**
+   *
+   */
+  public getCorrelationId = (): CorrelationId => this.correlationId;
+
+  /**
+   * .
+   *
+   * @param event -.
+   */
+  public sendCallStateMachineEvt(event: CallEvent) {
+    this.callStateMachine.send(event);
+  }
+
+  /**
+   * .
+   *
+   * @param event -.
+   */
+  public sendMediaStateMachineEvt(event: RoapEvent) {
+    this.mediaStateMachine.send(event);
+  }
+
+  /**
+   * @param callId -.
+   */
+  public setCallId = (callId: CallId) => {
+    this.callId = callId;
+    this.rtcMetrics.updateCallId(callId);
+
+    log.info(`Setting callId : ${this.callId} for correlationId: ${this.correlationId}`, {
+      file: CALL_FILE,
+      method: METHODS.SET_CALL_ID,
+    });
+
+    this.callId = callId;
+    this.rtcMetrics.updateCallId(callId);
+  };
+
+  /**
+   * Sets the Disconnect reason.
+   *
+   */
+  private setDisconnectReason() {
+    if (this.mediaInactivity) {
+      this.disconnectReason.code = DisconnectCode.MEDIA_INACTIVITY;
+      this.disconnectReason.cause = DisconnectCause.MEDIA_INACTIVITY;
+    } else if (this.connected || this.direction === CallDirection.OUTBOUND) {
+      this.disconnectReason.code = DisconnectCode.NORMAL;
+      this.disconnectReason.cause = DisconnectCause.NORMAL;
+    } else {
+      this.disconnectReason.code = DisconnectCode.BUSY;
+      this.disconnectReason.cause = DisconnectCause.BUSY;
+    }
+  }
+
+  /**
+   * Gets the disconnection reason.
+   *
+   * @returns Reason.
+   */
+  public getDisconnectReason = (): DisconnectReason => {
+    return this.disconnectReason;
+  };
+
+  /**
+   * Answers the call with the provided local audio stream.
+   *
+   * @param localAudioStream - The local audio stream for the call.
+   */
+  public async answer(localAudioStream: LocalMicrophoneStream) {
+    log.info(`${METHOD_START_MESSAGE} with stream`, {
+      file: CALL_FILE,
+      method: METHODS.ANSWER,
+    });
+
+    this.localAudioStream = localAudioStream;
+    const localAudioTrack = localAudioStream.outputStream.getAudioTracks()[0];
+
+    if (!localAudioTrack) {
+      log.warn(`Did not find a local track while answering the call ${this.getCorrelationId()}`, {
+        file: CALL_FILE,
+        method: METHODS.ANSWER,
+      });
+      this.mediaInactivity = true;
+      this.sendCallStateMachineEvt({type: 'E_SEND_CALL_DISCONNECT'});
+
+      return;
+    }
+
+    localAudioTrack.enabled = true;
+
+    if (!this.mediaConnection) {
+      this.initMediaConnection(localAudioTrack);
+      this.mediaRoapEventsListener();
+      this.mediaTrackListener();
+      this.registerListeners(localAudioStream);
+    }
+
+    if (this.callStateMachine.state.value === 'S_SEND_CALL_PROGRESS') {
+      this.sendCallStateMachineEvt({type: 'E_SEND_CALL_CONNECT'});
+    } else {
+      log.warn(
+        `Call cannot be answered because the state is : ${this.callStateMachine.state.value}`,
+        {file: CALL_FILE, method: METHODS.ANSWER}
+      );
+    }
+  }
+
+  /**
+   * @param settings
+   * @param settings.localAudioTrack
+   */
+  public async dial(localAudioStream: LocalMicrophoneStream) {
+    log.info(`${METHOD_START_MESSAGE} with stream`, {
+      file: CALL_FILE,
+      method: METHODS.DIAL,
+    });
+
+    this.localAudioStream = localAudioStream;
+    const localAudioTrack = localAudioStream.outputStream.getAudioTracks()[0];
+
+    if (!localAudioTrack) {
+      log.warn(`Did not find a local track while dialing the call ${this.getCorrelationId()}`, {
+        file: CALL_FILE,
+        method: METHODS.DIAL,
+      });
+
+      this.deleteCb(this.getCorrelationId());
+      this.emit(CALL_EVENT_KEYS.DISCONNECT, this.getCorrelationId());
+
+      return;
+    }
+    localAudioTrack.enabled = true;
+
+    if (!this.mediaConnection) {
+      this.initMediaConnection(localAudioTrack);
+      this.mediaRoapEventsListener();
+      this.mediaTrackListener();
+      this.registerListeners(localAudioStream);
+    }
+
+    if (this.mediaStateMachine.state.value === 'S_ROAP_IDLE') {
+      this.sendMediaStateMachineEvt({type: 'E_SEND_ROAP_OFFER'});
+    } else {
+      log.warn(
+        `Call cannot be dialed because the state is already : ${this.mediaStateMachine.state.value}`,
+        {file: CALL_FILE, method: METHODS.DIAL}
+      );
+    }
+  }
+
+  /**
+   * .
+   *
+   * @param roapMessage
+   */
+  private post = async (roapMessage: RoapMessage): Promise<MobiusCallResponse> => {
+    const basePayload = {
+      device: {
+        deviceId: this.deviceId,
+        correlationId: this.correlationId,
+      },
+      localMedia: {
+        roap: roapMessage,
+        mediaId: uuid(),
+      },
+    };
+
+    return this.webex.request({
+      uri: `${this.mobiusUrl}${DEVICES_ENDPOINT_RESOURCE}/${this.deviceId}/${CALL_ENDPOINT_RESOURCE}`,
+      method: HTTP_METHODS.POST,
+      service: ALLOWED_SERVICES.MOBIUS,
+      headers: {
+        [CISCO_DEVICE_URL]: this.webex.internal.device.url,
+        [SPARK_USER_AGENT]: CALLING_USER_AGENT,
+      },
+      body: this.destination
+        ? {
+            ...basePayload,
+            callee: {
+              type: this.destination.type,
+              address: this.destination.address,
+            },
+          }
+        : basePayload,
+    });
+  };
+
+  /**
+   * .
+   *
+   * @param state -.
+   */
+  private async patch(state: MobiusCallState): Promise<PatchResponse> {
+    log.info(`Send a PATCH for ${state} to Webex Calling`, {
+      file: CALL_FILE,
+      method: 'patch',
+    });
+
+    return this.webex.request({
+      // Sample uri: http://localhost/api/v1/calling/web/devices/{deviceid}/calls/{callid}
+
+      uri: `${this.mobiusUrl}${DEVICES_ENDPOINT_RESOURCE}/${this.deviceId}/${CALLS_ENDPOINT_RESOURCE}/${this.callId}`,
+      method: HTTP_METHODS.PATCH,
+      service: ALLOWED_SERVICES.MOBIUS,
+      headers: {
+        [CISCO_DEVICE_URL]: this.webex.internal.device.url,
+        [SPARK_USER_AGENT]: CALLING_USER_AGENT,
+      },
+      body: {
+        device: {
+          deviceId: this.deviceId,
+          correlationId: this.correlationId,
+        },
+        callId: this.callId,
+        callState: state,
+        inbandMedia: false, // setting false for now
+      },
+    });
+  }
+
+  /**
+   * Sends Supplementary request to Mobius.
+   *
+   * @param context - Context information related to a particular supplementary service.
+   * @param type - Type of Supplementary service.
+   */
+  public async postSSRequest(context: unknown, type: SUPPLEMENTARY_SERVICES): Promise<SSResponse> {
+    const request = {
+      uri: `${this.mobiusUrl}${SERVICES_ENDPOINT}`,
+      method: HTTP_METHODS.POST,
+      service: ALLOWED_SERVICES.MOBIUS,
+      headers: {
+        [CISCO_DEVICE_URL]: this.webex.internal.device.url,
+        [SPARK_USER_AGENT]: CALLING_USER_AGENT,
+      },
+      body: {
+        device: {
+          deviceId: this.deviceId,
+          correlationId: this.correlationId,
+        },
+        callId: this.callId,
+      },
+    };
+
+    switch (type) {
+      case SUPPLEMENTARY_SERVICES.HOLD: {
+        request.uri = `${request.uri}/${CALL_HOLD_SERVICE}/${HOLD_ENDPOINT}`;
+        break;
+      }
+      case SUPPLEMENTARY_SERVICES.RESUME: {
+        request.uri = `${request.uri}/${CALL_HOLD_SERVICE}/${RESUME_ENDPOINT}`;
+        break;
+      }
+      case SUPPLEMENTARY_SERVICES.TRANSFER: {
+        request.uri = `${request.uri}/${CALL_TRANSFER_SERVICE}/${TRANSFER_ENDPOINT}`;
+        const transferContext = context as TransferContext;
+
+        if (transferContext.destination) {
+          Object.assign(request.body, {blindTransferContext: transferContext});
+          Object.assign(request.body, {transferType: TransferType.BLIND});
+        } /* istanbul ignore else */ else if (transferContext.transferToCallId) {
+          Object.assign(request.body, {consultTransferContext: transferContext});
+          Object.assign(request.body, {transferType: TransferType.CONSULT});
+        }
+        break;
+      }
+      default: {
+        log.warn(`Unknown type for PUT request: ${type}`, {
+          file: CALL_FILE,
+          method: METHODS.POST_SS_REQUEST,
+        });
+      }
+    }
+
+    return this.webex.request(request);
+  }
+
+  /**
+   * Sends Call status to Mobius.
+   */
+  public async postStatus(): Promise<WebexRequestPayload> {
+    return this.webex.request({
+      uri: `${this.mobiusUrl}${DEVICES_ENDPOINT_RESOURCE}/${this.deviceId}/${CALLS_ENDPOINT_RESOURCE}/${this.callId}/${CALL_STATUS_RESOURCE}`,
+      method: HTTP_METHODS.POST,
+      service: ALLOWED_SERVICES.MOBIUS,
+      headers: {
+        [CISCO_DEVICE_URL]: this.webex.internal.device.url,
+        [SPARK_USER_AGENT]: CALLING_USER_AGENT,
+      },
+      body: {
+        device: {
+          deviceId: this.deviceId,
+          correlationId: this.correlationId,
+        },
+        callId: this.callId,
+      },
+    });
+  }
+
+  /**
+   * This function is called when user attempts to complete transfer(Blind or Consult)
+   * It checks if we have a valid transferCallId or transfer target and transfer type.
+   *
+   * @param transferType - Transfer type.
+   * @param transferCallId - Call Id where the current call will be merged for consult transfers.
+   * @param transferTarget - Destination for blind transfer.
+   */
+  public async completeTransfer(
+    transferType: TransferType,
+    transferCallId?: CallId,
+    transferTarget?: string
+  ) {
+    if (transferType === TransferType.BLIND && transferTarget) {
+      /* blind transfer */
+
+      log.info(`Initiating Blind transfer with : ${transferTarget}`, {
+        file: CALL_FILE,
+        method: METHODS.COMPLETE_TRANSFER,
+      });
+
+      const context: TransferContext = {
+        transferorCallId: this.getCallId(),
+        destination: transferTarget,
+      };
+
+      try {
+        await this.postSSRequest(context, SUPPLEMENTARY_SERVICES.TRANSFER);
+
+        log.info(`Blind Transfer completed for correlationId ${this.getCorrelationId()}`, {
+          file: CALL_FILE,
+          method: METHODS.COMPLETE_TRANSFER,
+        });
+
+        this.metricManager.submitCallMetric(
+          METRIC_EVENT.CALL,
+          TRANSFER_ACTION.BLIND,
+          METRIC_TYPE.BEHAVIORAL,
+          this.getCallId(),
+          this.getCorrelationId(),
+          undefined
+        );
+      } catch (e) {
+        log.warn(`Blind Transfer failed for correlationId ${this.getCorrelationId()}`, {
+          file: CALL_FILE,
+          method: METHODS.COMPLETE_TRANSFER,
+        });
+
+        const errData = e as MobiusCallResponse;
+
+        handleCallErrors(
+          (error: CallError) => {
+            this.emit(CALL_EVENT_KEYS.TRANSFER_ERROR, error);
+            this.submitCallErrorMetric(error, TRANSFER_ACTION.BLIND);
+          },
+          ERROR_LAYER.CALL_CONTROL,
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          /* istanbul ignore next */ (interval: number) => undefined,
+          this.getCorrelationId(),
+          errData,
+          METHODS.COMPLETE_TRANSFER,
+          CALL_FILE
+        );
+
+        await uploadLogs({
+          correlationId: this.correlationId,
+          callId: this.callId,
+          broadworksCorrelationInfo: this.broadworksCorrelationInfo,
+        });
+      }
+    } else if (transferType === TransferType.CONSULT && transferCallId) {
+      /* Consult transfer */
+
+      log.info(`Initiating Consult transfer between : ${this.callId} and ${transferCallId}`, {
+        file: CALL_FILE,
+        method: METHODS.COMPLETE_TRANSFER,
+      });
+
+      const context: TransferContext = {
+        transferorCallId: this.getCallId(),
+        transferToCallId: transferCallId,
+      };
+
+      try {
+        await this.postSSRequest(context, SUPPLEMENTARY_SERVICES.TRANSFER);
+
+        log.info(`Consult Transfer completed for correlationId ${this.getCorrelationId()}`, {
+          file: CALL_FILE,
+          method: METHODS.COMPLETE_TRANSFER,
+        });
+
+        this.metricManager.submitCallMetric(
+          METRIC_EVENT.CALL,
+          TRANSFER_ACTION.CONSULT,
+          METRIC_TYPE.BEHAVIORAL,
+          this.getCallId(),
+          this.getCorrelationId(),
+          undefined
+        );
+      } catch (e) {
+        log.warn(`Consult Transfer failed for correlationId ${this.getCorrelationId()}`, {
+          file: CALL_FILE,
+          method: METHODS.COMPLETE_TRANSFER,
+        });
+
+        const errData = e as MobiusCallResponse;
+
+        handleCallErrors(
+          (error: CallError) => {
+            this.emit(CALL_EVENT_KEYS.TRANSFER_ERROR, error);
+            this.submitCallErrorMetric(error, TRANSFER_ACTION.CONSULT);
+          },
+          ERROR_LAYER.CALL_CONTROL,
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          /* istanbul ignore next */ (interval: number) => undefined,
+          this.getCorrelationId(),
+          errData,
+          METHODS.COMPLETE_TRANSFER,
+          CALL_FILE
+        );
+
+        await uploadLogs({
+          correlationId: this.correlationId,
+          callId: this.callId,
+          broadworksCorrelationInfo: this.broadworksCorrelationInfo,
+        });
+      }
+    } else {
+      log.warn(
+        `Invalid information received, transfer failed for correlationId: ${this.getCorrelationId()}`,
+        {
+          file: CALL_FILE,
+          method: METHODS.COMPLETE_TRANSFER,
+        }
+      );
+    }
+  }
+
+  /**
+   *
+   */
+  private async getCallStats(): Promise<CallRtpStats> {
+    let stats!: RTCStatsReport;
+
+    try {
+      stats = await this.mediaConnection.getStats();
+    } catch (err) {
+      log.warn('Stats collection failed, using dummy stats', {
+        file: CALL_FILE,
+        method: METHODS.GET_CALL_STATS,
+      });
+    }
+
+    return parseMediaQualityStatistics(stats);
+  }
+
+  /**
+   * .
+   *
+   * @param roapMessage -.
+   */
+  private async postMedia(roapMessage: RoapMessage): Promise<WebexRequestPayload> {
+    log.log('Posting message to Webex Calling', {
+      file: CALL_FILE,
+      method: METHODS.POST_MEDIA,
+    });
+
+    return this.webex.request({
+      uri: `${this.mobiusUrl}${DEVICES_ENDPOINT_RESOURCE}/${this.deviceId}/${CALLS_ENDPOINT_RESOURCE}/${this.callId}/${MEDIA_ENDPOINT_RESOURCE}`,
+      method: HTTP_METHODS.POST,
+      service: ALLOWED_SERVICES.MOBIUS,
+      headers: {
+        [CISCO_DEVICE_URL]: this.webex.internal.device.url,
+        [SPARK_USER_AGENT]: CALLING_USER_AGENT,
+      },
+      body: {
+        device: {
+          deviceId: this.deviceId,
+          correlationId: this.correlationId,
+        },
+        callId: this.callId,
+        localMedia: {
+          roap: roapMessage,
+          mediaId: uuid(),
+        },
+      },
+    });
+  }
+
+  /* istanbul ignore next */
+  /**
+   * Setup a listener for roap events emitted by the media sdk.
+   */
+  private mediaRoapEventsListener() {
+    this.mediaConnection.on(
+      MediaConnectionEventNames.ROAP_MESSAGE_TO_SEND,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      async (event: any) => {
+        log.info(
+          `ROAP message to send (rcv from MEDIA-SDK) :
+          \n type:  ${event.roapMessage?.messageType}, seq: ${event.roapMessage.seq} , version: ${event.roapMessage.version}`,
+          {file: CALL_FILE, method: METHODS.MEDIA_ROAP_EVENTS_LISTENER}
+        );
+
+        log.info(`SDP message to send : \n ${event.roapMessage?.sdp}`, {
+          file: CALL_FILE,
+          method: METHODS.MEDIA_ROAP_EVENTS_LISTENER,
+        });
+
+        switch (event.roapMessage.messageType) {
+          case RoapScenario.OK: {
+            const mediaOk = {
+              received: false,
+              message: event.roapMessage,
+            };
+
+            this.sendMediaStateMachineEvt({type: 'E_ROAP_OK', data: mediaOk});
+            break;
+          }
+
+          case RoapScenario.OFFER: {
+            // TODO: Remove these after the Media-Core adds the fix
+            // Check if at least one IPv6 "c=" line is present
+            log.info(`before modifying sdp: ${event.roapMessage.sdp}`, {
+              file: CALL_FILE,
+              method: METHODS.MEDIA_ROAP_EVENTS_LISTENER,
+            });
+
+            event.roapMessage.sdp = modifySdpForIPv4(event.roapMessage.sdp);
+
+            const sdpVideoPortZero = event.roapMessage.sdp.replace(
+              /^m=(video) (?:\d+) /gim,
+              'm=$1 0 '
+            );
+
+            log.info(`after modification sdp: ${sdpVideoPortZero}`, {
+              file: CALL_FILE,
+              method: METHODS.MEDIA_ROAP_EVENTS_LISTENER,
+            });
+
+            event.roapMessage.sdp = sdpVideoPortZero;
+            this.localRoapMessage = event.roapMessage;
+            this.sendCallStateMachineEvt({type: 'E_SEND_CALL_SETUP', data: event.roapMessage});
+            break;
+          }
+
+          case RoapScenario.ANSWER:
+            event.roapMessage.sdp = modifySdpForIPv4(event.roapMessage.sdp);
+            this.localRoapMessage = event.roapMessage;
+            this.sendMediaStateMachineEvt({type: 'E_SEND_ROAP_ANSWER', data: event.roapMessage});
+            break;
+
+          case RoapScenario.ERROR:
+            this.sendMediaStateMachineEvt({type: 'E_ROAP_ERROR', data: event.roapMessage});
+            break;
+
+          case RoapScenario.OFFER_RESPONSE:
+            event.roapMessage.sdp = modifySdpForIPv4(event.roapMessage.sdp);
+            this.localRoapMessage = event.roapMessage;
+            this.sendMediaStateMachineEvt({type: 'E_SEND_ROAP_OFFER', data: event.roapMessage});
+            break;
+
+          default:
+        }
+      }
+    );
+  }
+
+  /* istanbul ignore next */
+  /**
+   * Setup a listener for remote track added event emitted by the media sdk.
+   */
+  private mediaTrackListener() {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    this.mediaConnection.on(MediaConnectionEventNames.REMOTE_TRACK_ADDED, (e: any) => {
+      if (e.type === MEDIA_CONNECTION_EVENT_KEYS.MEDIA_TYPE_AUDIO) {
+        this.emit(CALL_EVENT_KEYS.REMOTE_MEDIA, e.track);
+      }
+    });
+  }
+
+  private onEffectEnabled = () => {
+    this.metricManager.submitBNRMetric(
+      METRIC_EVENT.BNR_ENABLED,
+      METRIC_TYPE.BEHAVIORAL,
+      this.callId,
+      this.correlationId
+    );
+  };
+
+  private onEffectDisabled = () => {
+    this.metricManager.submitBNRMetric(
+      METRIC_EVENT.BNR_DISABLED,
+      METRIC_TYPE.BEHAVIORAL,
+      this.callId,
+      this.correlationId
+    );
+  };
+
+  private updateTrack = (audioTrack: MediaStreamTrack) => {
+    this.mediaConnection.updateLocalTracks({audio: audioTrack});
+  };
+
+  private registerEffectListener = (addedEffect: TrackEffect) => {
+    if (this.localAudioStream) {
+      const effect = this.localAudioStream.getEffectByKind(NOISE_REDUCTION_EFFECT);
+
+      if (effect === addedEffect) {
+        effect.on(EffectEvent.Enabled, this.onEffectEnabled);
+        effect.on(EffectEvent.Disabled, this.onEffectDisabled);
+      }
+    }
+  };
+
+  private unregisterListeners() {
+    if (this.localAudioStream) {
+      const effect = this.localAudioStream.getEffectByKind(NOISE_REDUCTION_EFFECT);
+
+      if (effect) {
+        effect.off(EffectEvent.Enabled, this.onEffectEnabled);
+        effect.off(EffectEvent.Disabled, this.onEffectDisabled);
+      }
+
+      this.localAudioStream.off(LocalStreamEventNames.EffectAdded, this.registerEffectListener);
+      this.localAudioStream.off(LocalStreamEventNames.OutputTrackChange, this.updateTrack);
+    }
+  }
+
+  private registerListeners(localAudioStream: LocalMicrophoneStream) {
+    localAudioStream.on(LocalStreamEventNames.OutputTrackChange, this.updateTrack);
+
+    localAudioStream.on(LocalStreamEventNames.EffectAdded, this.registerEffectListener);
+
+    const effect = localAudioStream.getEffectByKind(NOISE_REDUCTION_EFFECT) as any;
+
+    if (effect) {
+      effect.on(EffectEvent.Enabled, this.onEffectEnabled);
+      effect.on(EffectEvent.Disabled, this.onEffectDisabled);
+      if (effect.isEnabled) {
+        this.onEffectEnabled();
+      }
+    }
+  }
+
+  private async delete(): Promise<MobiusCallResponse> {
+    const disconnectMetrics = await this.getCallStats();
+
+    return this.webex.request({
+      uri: `${this.mobiusUrl}${DEVICES_ENDPOINT_RESOURCE}/${this.deviceId}/${CALLS_ENDPOINT_RESOURCE}/${this.callId}`,
+      method: HTTP_METHODS.DELETE,
+      service: ALLOWED_SERVICES.MOBIUS,
+      headers: {
+        [CISCO_DEVICE_URL]: this.webex.internal.device.url,
+        [SPARK_USER_AGENT]: CALLING_USER_AGENT,
+      },
+      body: {
+        device: {
+          deviceId: this.deviceId,
+          correlationId: this.correlationId,
+        },
+        callId: this.callId,
+        metrics: disconnectMetrics,
+        causecode: this.disconnectReason.code,
+        cause: this.disconnectReason.cause,
+      },
+    });
+  }
+
+  /**
+   * @param state - Current state of the call state machine.
+   * @param error - Error object containing the message and type.
+   * @param transferMetricAction - Metric action type incase of a transfer metric.
+   */
+  private submitCallErrorMetric(error: CallError, transferMetricAction?: TRANSFER_ACTION) {
+    if (error.getCallError().errorLayer === ERROR_LAYER.CALL_CONTROL) {
+      this.metricManager.submitCallMetric(
+        METRIC_EVENT.CALL_ERROR,
+        transferMetricAction || this.callStateMachine.state.value.toString(),
+        METRIC_TYPE.BEHAVIORAL,
+        this.callId,
+        this.correlationId,
+        error
+      );
+    } else {
+      this.metricManager.submitMediaMetric(
+        METRIC_EVENT.MEDIA_ERROR,
+        this.mediaStateMachine.state.value.toString(),
+        METRIC_TYPE.BEHAVIORAL,
+        this.callId,
+        this.correlationId,
+        this.localRoapMessage.sdp,
+        this.remoteRoapMessage?.sdp,
+        error
+      );
+    }
+  }
+
+  /**
+   * Handler for mid call events.
+   *
+   * @param event - Midcall Events from Mobius.
+   */
+  public handleMidCallEvent(event: MidCallEvent) {
+    const {eventType, eventData} = event;
+
+    switch (eventType) {
+      case MidCallEventType.CALL_INFO: {
+        log.log(`Received Midcall CallInfo Event for correlationId : ${this.correlationId}`, {
+          file: CALL_FILE,
+          method: METHODS.HANDLE_MID_CALL_EVENT,
+        });
+
+        const callerData = eventData as MidCallCallerId;
+
+        this.startCallerIdResolution(callerData.callerId);
+
+        break;
+      }
+
+      case MidCallEventType.CALL_STATE: {
+        log.log(`Received Midcall call event for correlationId : ${this.correlationId}`, {
+          file: CALL_FILE,
+          method: METHODS.HANDLE_MID_CALL_EVENT,
+        });
+
+        const data = eventData as SupplementaryServiceState;
+
+        /* Emit Events as per the state.
+         * We will enter this state only when media negotiation is done
+         * So, it's safe to emit events from here.
+         */
+
+        switch (data.callState) {
+          case MOBIUS_MIDCALL_STATE.HELD: {
+            log.log(`Call is successfully held : ${this.correlationId}`, {
+              file: CALL_FILE,
+              method: METHODS.HANDLE_MID_CALL_EVENT,
+            });
+
+            this.emit(CALL_EVENT_KEYS.HELD, this.correlationId);
+
+            this.held = true;
+
+            if (this.supplementaryServicesTimer) {
+              clearTimeout(this.supplementaryServicesTimer);
+              this.supplementaryServicesTimer = undefined;
+            }
+
+            break;
+          }
+
+          case MOBIUS_MIDCALL_STATE.CONNECTED: {
+            log.log(`Call is successfully resumed : ${this.correlationId}`, {
+              file: CALL_FILE,
+              method: METHODS.HANDLE_MID_CALL_EVENT,
+            });
+
+            this.emit(CALL_EVENT_KEYS.RESUMED, this.correlationId);
+
+            this.held = false;
+
+            if (this.supplementaryServicesTimer) {
+              clearTimeout(this.supplementaryServicesTimer);
+              this.supplementaryServicesTimer = undefined;
+            }
+
+            break;
+          }
+
+          default: {
+            log.warn(
+              `Unknown Supplementary service state: ${data.callState} for correlationId : ${this.correlationId}`,
+              {
+                file: CALL_FILE,
+                method: METHODS.HANDLE_MID_CALL_EVENT,
+              }
+            );
+          }
+        }
+
+        break;
+      }
+
+      default: {
+        log.warn(`Unknown Midcall type: ${eventType} for correlationId : ${this.correlationId}`, {
+          file: CALL_FILE,
+          method: METHODS.HANDLE_MID_CALL_EVENT,
+        });
+      }
+    }
+  }
+
+  /**
+   *
+   */
+  public getCallerInfo = (): DisplayInformation => this.callerInfo;
+
+  /**
+   *
+   */
+  public end = (): void => {
+    log.info(`${METHOD_START_MESSAGE}`, {
+      file: CALL_FILE,
+      method: METHODS.END,
+    });
+
+    this.sendCallStateMachineEvt({type: 'E_SEND_CALL_DISCONNECT'});
+  };
+
+  /**
+   *
+   */
+  public doHoldResume = (): void => {
+    if (this.held) {
+      this.sendCallStateMachineEvt({type: 'E_CALL_RESUME'});
+    } else {
+      this.sendCallStateMachineEvt({type: 'E_CALL_HOLD'});
+    }
+  };
+
+  /**
+   * .
+   *
+   * @param callerInfo
+   */
+  public startCallerIdResolution(callerInfo: CallerIdInfo) {
+    this.callerInfo = this.callerId.fetchCallerDetails(callerInfo);
+  }
+
+  /**
+   * Sends digit over the established call.
+   *
+   * @param tone - DTMF tones.
+   */
+  public sendDigit(tone: string) {
+    log.info(`${METHOD_START_MESSAGE} with: ${tone}`, {
+      file: CALL_FILE,
+      method: METHODS.SEND_DIGIT,
+    });
+
+    /* istanbul ignore else */
+    try {
+      this.mediaConnection.insertDTMF(tone);
+    } catch (e: any) {
+      log.warn(`Unable to send digit on call: ${e.message}`, {
+        file: CALL_FILE,
+        method: METHODS.SEND_DIGIT,
+      });
+    }
+  }
+
+  /**
+   * Mutes/Unmutes the call.
+   *
+   * @param localAudioStream - The local audio stream to mute or unmute.
+   * @param muteType - Identifies if mute was triggered by system or user.
+   *
+   * @example
+   * ```javascript
+   * call.mute(localAudioStream, 'system_mute')
+   * ```
+   */
+  public mute = (localAudioStream: LocalMicrophoneStream, muteType?: MUTE_TYPE): void => {
+    log.info(`${METHOD_START_MESSAGE} with: ${muteType || 'user mute'}`, {
+      file: CALL_FILE,
+      method: METHODS.MUTE,
+    });
+
+    if (!localAudioStream) {
+      log.warn(`Did not find a local stream while muting the call ${this.getCorrelationId()}.`, {
+        file: CALL_FILE,
+        method: METHODS.MUTE,
+      });
+
+      return;
+    }
+    if (muteType === MUTE_TYPE.SYSTEM) {
+      if (!localAudioStream.userMuted) {
+        this.muted = localAudioStream.systemMuted;
+      } else {
+        log.info(`Call is muted by the user already - ${this.getCorrelationId()}.`, {
+          file: CALL_FILE,
+          method: METHODS.MUTE,
+        });
+      }
+    } else if (!localAudioStream.systemMuted) {
+      localAudioStream.setUserMuted(!this.muted);
+      this.muted = !this.muted;
+    } else {
+      log.info(`Call is muted on the system - ${this.getCorrelationId()}.`, {
+        file: CALL_FILE,
+        method: METHODS.MUTE,
+      });
+    }
+  };
+
+  /**
+   * Change the audio stream of the call.
+   *
+   * @param newAudioStream - The new audio stream to be used in the call.
+   */
+
+  public updateMedia = (newAudioStream: LocalMicrophoneStream): void => {
+    const localAudioTrack = newAudioStream.outputStream.getAudioTracks()[0];
+
+    if (!localAudioTrack) {
+      log.warn(
+        `Did not find a local track while updating media for call ${this.getCorrelationId()}. Will not update media`,
+        {
+          file: CALL_FILE,
+          method: METHODS.UPDATE_MEDIA,
+        }
+      );
+
+      return;
+    }
+
+    try {
+      this.mediaConnection.updateLocalTracks({
+        audio: localAudioTrack,
+      });
+
+      this.unregisterListeners();
+      this.registerListeners(newAudioStream);
+      this.localAudioStream = newAudioStream;
+    } catch (e: any) {
+      log.warn(`Unable to update media on call ${this.getCorrelationId()}. Error: ${e.message}`, {
+        file: CALL_FILE,
+        method: METHODS.UPDATE_MEDIA,
+      });
+    }
+  };
+
+  /**
+   * @param broadworksCorrelationInfo
+   */
+  setBroadworksCorrelationInfo(broadworksCorrelationInfo: string): void {
+    this.broadworksCorrelationInfo = broadworksCorrelationInfo;
+  }
+
+  /**
+   *
+   */
+  getBroadworksCorrelationInfo(): string | undefined {
+    return this.broadworksCorrelationInfo;
+  }
+
+  /**
+   * Get call stats for an active call.
+   *
+   * @returns Promise<CallRtpStats> Call Stats.
+   */
+  getCallRtpStats(): Promise<CallRtpStats> {
+    return this.getCallStats();
+  }
+
+  /**
+   * Handle timeout for the missed events
+   * @param expectedStates - An array of next expected states
+   * @param errorMessage - Error message to be emitted if the call is not in the expected state in expected time
+   */
+  private async handleTimeout() {
+    log.warn(`Call timed out`, {
+      file: CALL_FILE,
+      method: METHODS.HANDLE_TIMEOUT,
+    });
+    this.deleteCb(this.getCorrelationId());
+    this.emit(CALL_EVENT_KEYS.DISCONNECT, this.getCorrelationId());
+    const response = await this.delete();
+
+    log.log(`Response code: ${response.statusCode}`, {
+      file: CALL_FILE,
+      method: METHODS.HANDLE_TIMEOUT,
+    });
+  }
+}
+
+/**
+ * @param activeUrl
+ * @param webex -.
+ * @param dir -.
+ * @param deviceId -.
+ * @param lineId -.
+ * @param serverCb
+ * @param deleteCb
+ * @param indicator - Service Indicator.
+ * @param dest -.
+ */
+export const createCall = (
+  activeUrl: string,
+  webex: WebexSDK,
+  dir: CallDirection,
+  deviceId: string,
+  lineId: string,
+  deleteCb: DeleteRecordCallBack,
+  indicator: ServiceIndicator,
+  dest?: CallDetails
+): ICall => new Call(activeUrl, webex, dir, deviceId, lineId, deleteCb, indicator, dest);

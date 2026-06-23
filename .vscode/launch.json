@@ -1,0 +1,78 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "chrome",
+      "request": "launch",
+      "name": "Launch Chrome against localhost",
+      "url": "https://localhost:8000",
+      "webRoot": "${workspaceFolder}"
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Test specific packages",
+      "autoAttachChildProcesses": true,
+      "runtimeArgs": [
+        "./tooling/index.js",
+        "test",
+        "--packages",
+        "${input:packages}",
+        "${input:flags}"
+      ]
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Debug Jest Tests for specific package",
+      "program": "${workspaceFolder}/node_modules/.bin/jest",
+      "args": [
+        "--runInBand",
+        "--config",
+        "packages/${input:packages}/jest.config.js"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "env": {
+        "NODE_OPTIONS": "--max-old-space-size=8192" // Allocate 8GB of memory size for V8's Garbage Collection Refer: https://nodejs.org/api/cli.html#--max-old-space-sizesize-in-megabytes
+      }
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Test all packages",
+      "autoAttachChildProcesses": true,
+      "runtimeArgs": ["./tooling/index.js", "test", "${input:flags}"]
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Launch BYODS Demo Server",
+      "cwd": "${workspaceFolder}/packages/byods-demo-server",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "autoAttachChildProcesses": true,
+      "skipFiles": [
+        "<node_internals>/**"
+      ]
+    }
+  ],
+  "inputs": [
+    {
+      "id": "packages",
+      "type": "promptString",
+      "description": "Which package do you want to debug (i.e. `@webex/plugin-meetings`)"
+    },
+    {
+      "id": "flags",
+      "type": "promptString",
+      "description": "Which flags would you like to add (i.e. `--node` or `--unit`) -- IF NONE ADD A SPACE"
+    }
+  ]
+}

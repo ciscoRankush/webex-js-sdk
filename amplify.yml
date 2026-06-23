@@ -1,0 +1,16 @@
+version: 0.1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - yarn install --immutable
+    build:
+      commands:
+        - yarn workspaces foreach --from '@webex/*-tools' --topological-dev --parallel --verbose run build:src
+        - yarn package-tools sync --tag next
+        - yarn run build:local
+        - yarn run build:docs
+  artifacts:
+    baseDirectory: docs/
+    files:
+      - '**/*'
