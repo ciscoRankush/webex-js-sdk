@@ -923,6 +923,46 @@ export type agentDefaultWrapupCode = {
 };
 
 /**
+ * AI feature resource row returned by /v2/ai-feature API.
+ * @public
+ */
+export type AIFeatureFlags = {
+  id: string;
+  realtimeTranscripts?: {
+    enable?: boolean;
+    agentInclusionType?: string;
+  };
+  suggestedResponses?: {
+    enable?: boolean;
+  };
+  generatedSummaries?: {
+    callDropSummariesEnabled?: boolean;
+    virtualAgentTransferSummariesEnabled?: boolean;
+    consultTransferSummariesEnabled?: boolean;
+    wrapUpSummariesEnabled?: boolean;
+  };
+  featureToggles?: Record<string, boolean>;
+};
+
+/**
+ * Response type for list AI feature resources API.
+ * @public
+ */
+export type AIFeatureFlagsResponse = {
+  meta?: {
+    orgid?: string;
+    page?: number;
+    pageSize?: number;
+    totalPages?: number;
+    totalRecords?: number;
+    links?: {
+      self?: string;
+    };
+  };
+  data: AIFeatureFlags[];
+};
+
+/**
  * Wrap-up reason configuration used to classify completed interactions
  * @public
  */
@@ -1153,6 +1193,8 @@ export type Profile = {
   lastStateChangeTimestamp?: number;
   /** Timestamp of last idle code change */
   lastIdleCodeChangeTimestamp?: number;
+  /** AI feature flags resolved from organization config */
+  aiFeature?: AIFeatureFlags;
 };
 
 /**

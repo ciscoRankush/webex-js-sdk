@@ -61,4 +61,8 @@ export const METHODS = {
   TOGGLE_MUTE: 'toggleMute',
   COMPLETE_TRANSFER: 'completeTransfer',
   GET_OUTDIAL_ANI_ENTRIES: 'getOutdialAniEntries',
+  GET_BASE_URL: 'getBaseUrl',
+  SEND_EVENT: 'sendEvent',
+  FETCH_HISTORIC_TRANSCRIPTS: 'fetchHistoricTranscripts',
+  REQUEST_HANDOFF_SUMMARY: 'requestHandoffSummary',
 };

@@ -63,6 +63,7 @@ import {Failure} from './services/core/GlobalTypes';
 import {EntryPoint} from './services/EntryPoint';
 import {AddressBook} from './services/AddressBook';
 import {Queue} from './services/Queue';
+import {ApiAIAssistant} from './services/ApiAiAssistant';
 import type {
   EntryPointListResponse,
   EntryPointSearchParams,
@@ -321,6 +322,13 @@ export default class ContactCenter extends WebexPlugin implements IContactCenter
   public queue: Queue;
 
   /**
+   * API instance for AI Assistant operations such as transcript and handoff-summary controls.
+   * @type {ApiAIAssistant}
+   * @public
+   */
+  public apiAIAssistant: ApiAIAssistant;
+
+  /**
    * Logger utility for Contact Center plugin
    * Provides consistent logging across the plugin
    * @type {LoggerProxy}
@@ -358,6 +366,7 @@ export default class ContactCenter extends WebexPlugin implements IContactCenter
       this.services.webSocketManager.on('message', this.handleWebsocketMessage);
 
       this.webCallingService = new WebCallingService(this.$webex);
+      this.apiAIAssistant = new ApiAIAssistant(this.$webex);
       this.metricsManager = MetricsManager.getInstance({webex: this.$webex});
       this.taskManager = TaskManager.getTaskManager(
         this.services.contact,
@@ -719,6 +728,7 @@ export default class ContactCenter extends WebexPlugin implements IContactCenter
           this.taskManager.setWrapupData(this.agentConfig.wrapUpData);
           this.taskManager.setAgentId(this.agentConfig.agentId);
           this.taskManager.setWebRtcEnabled(this.agentConfig.webRtcEnabled);
+          this.apiAIAssistant.setAIFeatureFlags(this.agentConfig.aiFeature);
 
           if (
             this.agentConfig.webRtcEnabled &&

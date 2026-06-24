@@ -1,6 +1,8 @@
 import {LOST_CONNECTION_RECOVERY_TIMEOUT} from '../core/constants';
 import {
   AgentResponse,
+  AIFeatureFlags,
+  AIFeatureFlagsResponse,
   AuxCode,
   AuxCodeType,
   DesktopProfileResponse,
@@ -140,6 +142,7 @@ function parseAgentConfigs(profileData: {
   dialPlanData: DialPlanEntity[];
   urlMapping: URLMapping[];
   multimediaProfileId: string;
+  aiFeatureFlags?: AIFeatureFlagsResponse;
 }): Profile {
   const {
     userData,
@@ -151,6 +154,7 @@ function parseAgentConfigs(profileData: {
     agentProfileData,
     dialPlanData,
     urlMapping,
+    aiFeatureFlags,
   } = profileData;
 
   const tenantDataTimeout = tenantData.timeoutDesktopInactivityEnabled
@@ -180,6 +184,8 @@ function parseAgentConfigs(profileData: {
   }); // pushing available state to idle codes
 
   const defaultWrapUpData = getDefaultWrapUpCode(wrapupCodes);
+  const aiFeature: AIFeatureFlags | undefined =
+    aiFeatureFlags?.data && aiFeatureFlags.data.length > 0 ? aiFeatureFlags.data[0] : undefined;
 
   const finalData = {
     teams: teamData,
@@ -253,6 +259,7 @@ function parseAgentConfigs(profileData: {
     webexConfig: getWebexConfig(agentProfileData),
     lostConnectionRecoveryTimeout:
       tenantData.lostConnectionRecoveryTimeout || LOST_CONNECTION_RECOVERY_TIMEOUT,
+    aiFeature,
   };
 
   return finalData;
