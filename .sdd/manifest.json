@@ -1,0 +1,725 @@
+{
+  "manifest_version": 1,
+  "repository": {
+    "name": "webex-js-sdk",
+    "purpose": "JavaScript/TypeScript SDK for the Webex platform, providing APIs for messaging, calling, meetings, and collaboration features across browser and Node.js environments.",
+    "category": "cat1-legacy",
+    "primary_languages": ["JavaScript", "TypeScript"]
+  },
+  "topology": "Multi-repo-workspace",
+  "layout": {
+    "agent_entry_path": "AGENTS.md",
+    "standing_docs_root": "ai-docs/",
+    "module_docs_folder_name": "ai-docs",
+    "spec_index_path": "ai-docs/SPEC_INDEX.md"
+  },
+  "toolchain": [
+    {
+      "name": "node",
+      "version": "18.x",
+      "origin": "repo-config",
+      "source_file": "package.json"
+    },
+    {
+      "name": "yarn",
+      "version": "3.4.1",
+      "origin": "repo-config",
+      "source_file": ".yarnrc.yml"
+    },
+    {
+      "name": "typescript",
+      "version": "4.9.5",
+      "origin": "repo-config",
+      "source_file": "tsconfig.json"
+    }
+  ],
+  "registries": [
+    {
+      "name": "npm-public",
+      "type": "npm",
+      "host": "https://registry.npmjs.org",
+      "origin": "repo-config",
+      "source_file": ".yarnrc.yml"
+    },
+    {
+      "name": "cisco-artifactory",
+      "type": "npm",
+      "host": "http://engci-maven-master.cisco.com/artifactory/api/npm/webex-release-npm",
+      "origin": "repo-config",
+      "source_file": "package.json"
+    }
+  ],
+  "commands": {
+    "install":          { "command": "yarn install",          "role": "install",           "source_file": "package.json" },
+    "build-local":      { "command": "yarn build:local",      "role": "build",             "source_file": "package.json" },
+    "build-publish":    { "command": "yarn build:publish",    "role": "build",             "source_file": "package.json" },
+    "build-tools":      { "command": "yarn ws:tools",         "role": "build",             "source_file": "package.json" },
+    "test-all":         { "command": "yarn test",             "role": "other",             "source_file": "package.json" },
+    "test-unit":        { "command": "yarn test:unit",        "role": "unit-test",         "source_file": "package.json" },
+    "test-integration": { "command": "yarn test:integration", "role": "integration-test",  "source_file": "package.json" },
+    "lint":             { "command": "yarn lint",             "role": "lint",              "source_file": "package.json" },
+    "build-docs":       { "command": "yarn build:docs",       "role": "other",             "source_file": "package.json" },
+    "clean":            { "command": "yarn clean",            "role": "other",             "source_file": "package.json" }
+  },
+  "tests": {
+    "unit": {
+      "command_ref": "test-unit",
+      "dir": "packages/*/test/unit/",
+      "framework": "jest"
+    },
+    "integration": {
+      "command_ref": "test-integration",
+      "dir": "packages/*/test/integration/",
+      "framework": "mocha"
+    },
+    "e2e": {
+      "command_ref": "test-all",
+      "framework": "karma"
+    }
+  },
+  "quality_gates": {
+    "code_coverage": {
+      "min": 85,
+      "kind": "unit-test",
+      "applies_to": "total",
+      "enforced": true,
+      "origin": "repo-config",
+      "source_file": "jest.config.js"
+    }
+  },
+  "spec_policy": {
+    "delta_grammar": {
+      "added": "## ADDED Requirements",
+      "modified": "## MODIFIED Requirements",
+      "removed": "## REMOVED Requirements"
+    },
+    "require_what_and_why": true,
+    "require_provenance": true,
+    "required_sections_by_change_class": {
+      "core_always": ["Intent (WHAT)", "Rationale (WHY)", "Scope/Out-of-scope", "Acceptance criteria", "Contracts delta"],
+      "security_or_contract_or_perf_critical": ["Data", "Error Matrix", "Resilience", "Observability", "Operations"]
+    }
+  },
+  "spec_source_policy": {
+    "mode": "migrate-existing",
+    "migrated_source_disposition": "retain",
+    "disposition_decided_by": "automated-non-interactive",
+    "disposition_decided_at": "2026-07-28T00:00:00Z",
+    "decided_by": "automated-non-interactive",
+    "decided_at": "2026-07-28T00:00:00Z",
+    "decision_record": ".sdd/spec-source-policy/decision.md"
+  },
+  "validation": {
+    "generator_runtime": "claude-sonnet-4-6",
+    "generator_model": "claude-sonnet-4-6",
+    "generator_run_id": "repo-bootstrap-assess-only-2026-07-28",
+    "generator_runtime_source": "host-metadata",
+    "minimum_independence": "different-runtime",
+    "blocking_severities": ["Blocking"]
+  },
+  "substrate": {
+    "source": "WebexTools/repo-standards",
+    "consumed": [
+      "eslintrules/",
+      "config/eslint/",
+      "config/jest/",
+      "config/typescript/",
+      "commitlint.config.cjs",
+      ".coderabbit.yaml",
+      ".codeclimate.yml"
+    ]
+  },
+  "spec_sources": [
+    {
+      "path": "webex-plugin-architecture.md",
+      "scope": "repo",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "ai-docs/ARCHITECTURE.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable"
+    },
+    {
+      "path": "README.md",
+      "scope": "repo",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "ai-docs/GETTING_STARTED.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable"
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "scope": "repo",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "AGENTS.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable"
+    },
+    {
+      "path": "documentation/webex.md",
+      "scope": "repo",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "ai-docs/GETTING_STARTED.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable"
+    },
+    {
+      "path": "documentation/README.md",
+      "scope": "repo",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "AGENTS.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable"
+    },
+    {
+      "path": "ENV.md",
+      "scope": "repo",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "ai-docs/GETTING_STARTED.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable"
+    },
+    {
+      "path": "SCRIPTS.md",
+      "scope": "repo",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "AGENTS.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable"
+    },
+    {
+      "path": "UPGRADING.md",
+      "scope": "repo",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "ai-docs/ARCHITECTURE.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable"
+    },
+    {
+      "path": "docs/dependency/audit-process.md",
+      "scope": "repo",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "ai-docs/RULES.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable"
+    },
+    {
+      "path": "docs/dependency/unmaintained-catalog.md",
+      "scope": "repo",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "ai-docs/RULES.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable"
+    },
+    {
+      "path": "docs/dependency/snapshots/unmaintained-2026-01-22T07-06-32-565Z.md",
+      "scope": "repo",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "ai-docs/RULES.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable"
+    },
+    {
+      "path": "docs/labs/contact-center/README.md",
+      "scope": "module",
+      "module": "packages/@webex/contact-center/",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "packages/@webex/contact-center/ai-docs/contact-center-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable"
+    },
+    {
+      "path": "packages/@webex/contact-center/typedoc.md",
+      "scope": "module",
+      "module": "packages/@webex/contact-center/",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "packages/@webex/contact-center/ai-docs/contact-center-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable"
+    },
+    {
+      "path": "packages/@webex/plugin-authorization/OAUTH-FLOW-GUIDE.md",
+      "scope": "module",
+      "module": "packages/@webex/plugin-authorization/",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "packages/@webex/plugin-authorization/ai-docs/plugin-authorization-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable"
+    },
+    {
+      "path": "packages/@webex/plugin-authorization-browser/BROWSER-OAUTH-FLOW-GUIDE.md",
+      "scope": "module",
+      "module": "packages/@webex/plugin-authorization-browser/",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "packages/@webex/plugin-authorization-browser/ai-docs/plugin-authorization-browser-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable"
+    },
+    {
+      "path": "packages/@webex/plugin-authorization-node/NODE-OAUTH-FLOW-GUIDE.md",
+      "scope": "module",
+      "module": "packages/@webex/plugin-authorization-node/",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "packages/@webex/plugin-authorization-node/ai-docs/plugin-authorization-node-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable"
+    },
+    {
+      "path": "packages/@webex/internal-plugin-conversation/src/activity-threading.md",
+      "scope": "module",
+      "module": "packages/@webex/internal-plugin-conversation/",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "packages/@webex/internal-plugin-conversation/ai-docs/internal-plugin-conversation-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable"
+    },
+    {
+      "path": "packages/@webex/plugin-encryption/developer-quickstart.md",
+      "scope": "module",
+      "module": "packages/@webex/plugin-encryption/",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "packages/@webex/plugin-encryption/ai-docs/plugin-encryption-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable"
+    },
+    {
+      "path": "packages/calling/usm sdk flow.md",
+      "scope": "module",
+      "module": "packages/calling/",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "packages/calling/ai-docs/calling-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable"
+    }
+  ],
+  "modules": [
+    {
+      "path": "packages/webex/",
+      "coverage_status": "Partial",
+      "coverage_evidence": "42% assessed 2026-07-28; INCOMPLETE — 5/12 mandatory fields PRESENT (critical 3/7; important 2/5). PRESENT: module purpose, public API entry points, design overview/flows. WEAK: Provides/Requires contracts, data ownership, error behavior (Calling.register/deregister error paths and HYDRA_SERVICE_URL override untested), security/auth delegated but undocumented. MISSING: config/rollout, observability. Open question: encryption entry absent from exports map.",
+      "canonical_spec": "packages/webex/ai-docs/webex-spec.md",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/webex-node/",
+      "coverage_status": "Partial",
+      "coverage_evidence": "42% assessed 2026-07-28; INCOMPLETE — 5/12 mandatory fields PRESENT (critical 3/7; important 2/5). PRESENT: module purpose, public API (WebexNode.init, fedramp URLs, config merge), design overview/flows. WEAK: Provides/Requires contracts, data ownership, error behavior (HYDRA_SERVICE_URL override, clientType default, storage adapter untested), security/auth. MISSING: config/rollout, observability. Open question: internal-plugin-voicea in deps but no require() in src/webex-node.js.",
+      "canonical_spec": "packages/webex-node/ai-docs/webex-node-spec.md",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/webex-core/",
+      "coverage_status": "Partial",
+      "coverage_evidence": "67% assessed 2026-07-28; INCOMPLETE — 8/12 mandatory fields PRESENT (critical 6/7; important 2/5). PRESENT: module purpose, public API (registerPlugin, request pipeline, credentials, services, storage), Provides/Requires contracts, data ownership, security/auth (Credentials subsystem), external integrations. WEAK/critical: error behavior (logout ordering, scheduleRefresh jitter, storage-failure persistent behavior not unit-tested). WEAK/important: config/rollout (fedramp flag only), observability (no telemetry spec), test coverage (logout, scheduleRefresh, getOrgId, abort-session upload, env-mismatch cache invalidation missing).",
+      "canonical_spec": "packages/@webex/webex-core/ai-docs/webex-core-spec.md",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/http-core/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/common/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/common-evented/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/common-timers/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/calling/",
+      "coverage_status": "Partial",
+      "coverage_evidence": "33% field coverage (4/12 PRESENT; critical 2/7, important 2/5). INCOMPLETE — critical gaps: data ownership MISSING, security/auth MISSING, public API WEAK (USM-only subset), XState FSM error states undocumented. Measured 2026-07-28.",
+      "canonical_spec": "packages/calling/ai-docs/calling-spec.md",
+      "last_assessed": "2026-07-28",
+      "source_policy": {
+        "mode": "migrate-existing",
+        "existing_sources": ["packages/calling/usm sdk flow.md"],
+        "conflict_status": "none",
+        "decision_record": ".sdd/spec-source-policy/decision.md"
+      }
+    },
+    {
+      "path": "packages/byods/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/byods-demo-server/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/contact-center/",
+      "coverage_status": "Partial",
+      "coverage_evidence": "67% field coverage (8/12 PRESENT; critical 5/7, important 3/5). INCOMPLETE — critical gaps: data ownership MISSING (what state does CC own vs webex-core?), security/auth MISSING (token scopes, trust boundary). Important gaps: config/rollout MISSING, observability MISSING. Measured 2026-07-28.",
+      "canonical_spec": "packages/@webex/contact-center/ai-docs/contact-center-spec.md",
+      "last_assessed": "2026-07-28",
+      "source_policy": {
+        "mode": "migrate-existing",
+        "existing_sources": [
+          "docs/labs/contact-center/README.md",
+          "packages/@webex/contact-center/typedoc.md"
+        ],
+        "conflict_status": "none",
+        "decision_record": ".sdd/spec-source-policy/decision.md"
+      }
+    },
+    {
+      "path": "packages/@webex/plugin-meetings/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/plugin-authorization/",
+      "coverage_status": "Partial",
+      "coverage_evidence": "33% field coverage (4/12 PRESENT; critical 2/7, important 2/5). INCOMPLETE — critical gaps: public API WEAK (delegation table only, no method signatures), data ownership MISSING, error handling MISSING, external integrations WEAK. Measured 2026-07-28.",
+      "canonical_spec": "packages/@webex/plugin-authorization/ai-docs/plugin-authorization-spec.md",
+      "last_assessed": "2026-07-28",
+      "source_policy": {
+        "mode": "migrate-existing",
+        "existing_sources": ["packages/@webex/plugin-authorization/OAUTH-FLOW-GUIDE.md"],
+        "conflict_status": "none",
+        "decision_record": ".sdd/spec-source-policy/decision.md"
+      }
+    },
+    {
+      "path": "packages/@webex/plugin-authorization-browser/",
+      "coverage_status": "Partial",
+      "coverage_evidence": "75% field coverage (9/12 PRESENT; critical 6/7, important 3/5). INCOMPLETE — critical gap: data ownership WEAK (browser storage referenced but key, TTL, eviction not specified). Important gaps: config/rollout MISSING, observability MISSING. Measured 2026-07-28.",
+      "canonical_spec": "packages/@webex/plugin-authorization-browser/ai-docs/plugin-authorization-browser-spec.md",
+      "last_assessed": "2026-07-28",
+      "source_policy": {
+        "mode": "migrate-existing",
+        "existing_sources": ["packages/@webex/plugin-authorization-browser/BROWSER-OAUTH-FLOW-GUIDE.md"],
+        "conflict_status": "none",
+        "decision_record": ".sdd/spec-source-policy/decision.md"
+      }
+    },
+    {
+      "path": "packages/@webex/plugin-authorization-browser-first-party/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/plugin-authorization-node/",
+      "coverage_status": "Partial",
+      "coverage_evidence": "67% field coverage (8/12 PRESENT; critical 5/7, important 3/5). INCOMPLETE — critical gaps: data ownership MISSING (server-side token storage: memory vs DB not specified), public API WEAK (method signatures absent). Important gaps: config/rollout MISSING, observability MISSING. Measured 2026-07-28.",
+      "canonical_spec": "packages/@webex/plugin-authorization-node/ai-docs/plugin-authorization-node-spec.md",
+      "last_assessed": "2026-07-28",
+      "source_policy": {
+        "mode": "migrate-existing",
+        "existing_sources": ["packages/@webex/plugin-authorization-node/NODE-OAUTH-FLOW-GUIDE.md"],
+        "conflict_status": "none",
+        "decision_record": ".sdd/spec-source-policy/decision.md"
+      }
+    },
+    {
+      "path": "packages/@webex/plugin-encryption/",
+      "coverage_status": "Partial",
+      "coverage_evidence": "75% field coverage (9/12 PRESENT; critical 6/7, important 3/5). INCOMPLETE — critical gap: data ownership WEAK (boundary with internal-plugin-encryption not formally defined). Important gaps: config/rollout MISSING, observability MISSING. Measured 2026-07-28.",
+      "canonical_spec": "packages/@webex/plugin-encryption/ai-docs/plugin-encryption-spec.md",
+      "last_assessed": "2026-07-28",
+      "source_policy": {
+        "mode": "migrate-existing",
+        "existing_sources": ["packages/@webex/plugin-encryption/developer-quickstart.md"],
+        "conflict_status": "none",
+        "decision_record": ".sdd/spec-source-policy/decision.md"
+      }
+    },
+    {
+      "path": "packages/@webex/plugin-messages/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/plugin-rooms/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/plugin-memberships/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/plugin-people/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/plugin-presence/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/plugin-teams/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/plugin-team-memberships/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/plugin-webhooks/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/plugin-attachment-actions/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/plugin-device-manager/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/plugin-logger/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/internal-plugin-mercury/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/internal-plugin-device/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/internal-plugin-conversation/",
+      "coverage_status": "Partial",
+      "coverage_evidence": "17% field coverage (2/12 PRESENT; critical 1/7, important 1/5). INCOMPLETE — critical gaps: public API MISSING (no method signatures/events), Provides/Requires contracts MISSING, data ownership MISSING, security/auth MISSING, external integrations WEAK; error handling MISSING. Source material only covered threading algorithm. Measured 2026-07-28.",
+      "canonical_spec": "packages/@webex/internal-plugin-conversation/ai-docs/internal-plugin-conversation-spec.md",
+      "last_assessed": "2026-07-28",
+      "source_policy": {
+        "mode": "migrate-existing",
+        "existing_sources": ["packages/@webex/internal-plugin-conversation/src/activity-threading.md"],
+        "conflict_status": "none",
+        "decision_record": ".sdd/spec-source-policy/decision.md"
+      }
+    },
+    {
+      "path": "packages/@webex/internal-plugin-metrics/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/internal-plugin-locus/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/internal-plugin-llm/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/internal-plugin-feature/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/internal-plugin-presence/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/internal-plugin-calendar/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/internal-plugin-dss/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/internal-plugin-encryption/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/internal-plugin-wdm/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/internal-plugin-scheduler/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/internal-plugin-search/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/internal-plugin-support/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/internal-plugin-user/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/internal-plugin-voicea/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/internal-plugin-ai-assistant/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/internal-plugin-avatar/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/internal-plugin-board/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/internal-plugin-ediscovery/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/internal-plugin-flag/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/internal-plugin-lyra/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/internal-plugin-task/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/internal-plugin-team/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/media-helpers/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/helper-html/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    },
+    {
+      "path": "packages/@webex/helper-image/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "No canonical spec file exists; no SDD documentation for any part of the public API — code is the source of truth.",
+      "last_assessed": "2026-07-28"
+    }
+  ]
+}
