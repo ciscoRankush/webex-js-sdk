@@ -1,0 +1,354 @@
+{
+  "manifest_version": 1,
+  "repository": {
+    "name": "webex-js-sdk (authorization plugin family)",
+    "purpose": "Cisco Webex JS SDK monorepo; this SDD onboarding scope is the authorization plugin family that provides OAuth2 authentication across browser, Node.js, and first-party web-client environments.",
+    "category": "cat1-legacy",
+    "primary_languages": ["javascript"]
+  },
+  "topology": "Single-repo",
+  "commands": {
+    "install": { "command": "yarn", "source_file": "package.json", "role": "install" },
+    "test-unit": { "command": "yarn test:unit", "source_file": "package.json", "role": "unit-test" },
+    "test-integration": { "command": "yarn test:integration", "source_file": "package.json", "role": "integration-test" },
+    "lint": { "command": "yarn lint", "source_file": "package.json", "role": "lint" },
+    "build": { "command": "yarn build", "source_file": "package.json", "role": "build" }
+  },
+  "toolchain": [
+    { "name": "node", "version": "18.x", "origin": "repo-config", "source_file": "package.json" },
+    { "name": "yarn", "version": "3.4.1", "origin": "repo-config", "source_file": "package.json" }
+  ],
+  "tests": {
+    "unit": { "command_ref": "test-unit", "dir": "packages/@webex/plugin-authorization-browser/test/unit", "framework": "jest" },
+    "integration": { "command_ref": "test-integration", "dir": "packages/@webex/plugin-authorization-node/test/integration", "framework": "mocha", "external_deps": ["webex test users"] }
+  },
+  "quality_gates": {
+    "code_coverage": {
+      "origin": "unknown"
+    }
+  },
+  "coverage_status_definitions": {
+    "specced": ">=80% public surface specced, drift <5% — spec is authoritative",
+    "partial": "40-80% specced — spec is a hint, cross-check code",
+    "untracked": "<40% specced — code is the source of truth"
+  },
+  "spec_source_policy": {
+    "mode": "migrate-existing",
+    "migrated_source_disposition": "retain",
+    "disposition_decided_by": "automated-run (non-interactive; safe default)",
+    "disposition_decided_at": "2026-07-31T00:00:00Z",
+    "decided_by": "automated-run (invocation argument: migrate-existing)",
+    "decided_at": "2026-07-31T00:00:00Z",
+    "decision_record": ".generated/sdd/spec-source-policy/decision.md"
+  },
+  "spec_sources": [
+    {
+      "path": "packages/@webex/plugin-authorization-browser/BROWSER-OAUTH-FLOW-GUIDE.md",
+      "scope": "module",
+      "module": "packages/@webex/plugin-authorization-browser/",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "packages/@webex/plugin-authorization-browser/ai-docs/plugin-authorization-browser-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Browser OAuth technical guide; migrated by meaning into the browser module spec. Retained as source-for-migration reference."
+    },
+    {
+      "path": "packages/@webex/plugin-authorization-node/NODE-OAUTH-FLOW-GUIDE.md",
+      "scope": "module",
+      "module": "packages/@webex/plugin-authorization-node/",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "packages/@webex/plugin-authorization-node/ai-docs/plugin-authorization-node-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Node.js OAuth technical guide; migrated by meaning into the node module spec. Retained."
+    },
+    {
+      "path": "packages/@webex/plugin-authorization/README.md",
+      "scope": "module",
+      "module": "packages/@webex/plugin-authorization/",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "packages/@webex/plugin-authorization/ai-docs/plugin-authorization-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Loader package README documenting env detection, methods, and client-type OAuth flows; retained."
+    },
+    {
+      "path": "packages/@webex/plugin-authorization-browser/README.md",
+      "scope": "module",
+      "module": "packages/@webex/plugin-authorization-browser/",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "packages/@webex/plugin-authorization-browser/ai-docs/plugin-authorization-browser-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Browser package README; retained."
+    },
+    {
+      "path": "packages/@webex/plugin-authorization-node/README.md",
+      "scope": "module",
+      "module": "packages/@webex/plugin-authorization-node/",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "packages/@webex/plugin-authorization-node/ai-docs/plugin-authorization-node-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Node package README documenting methods and properties; retained."
+    },
+    {
+      "path": "packages/@webex/plugin-authorization-browser-first-party/README.md",
+      "scope": "module",
+      "module": "packages/@webex/plugin-authorization-browser-first-party/",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "packages/@webex/plugin-authorization-browser-first-party/ai-docs/plugin-authorization-browser-first-party-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "First-party README documenting PKCE, QR device login, events, and security controls; retained."
+    },
+    {
+      "path": "webex-plugin-architecture.md",
+      "scope": "repo",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "ai-docs/ARCHITECTURE.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Repo-level Webex Core / plugin-system architecture guide (WebexCore, WebexPlugin base, interceptor pipeline, storage, config, events); migrated by meaning into the repo architecture standing doc. Retained as source-for-migration reference."
+    }
+  ],
+  "modules": [
+    {
+      "path": "packages/@webex/plugin-authorization/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "Assess-only draft: canonical spec generated from README source material; coverage not yet measured. Loader package re-exports the environment-specific implementation.",
+      "canonical_spec": "packages/@webex/plugin-authorization/ai-docs/plugin-authorization-spec.md",
+      "contracts": {
+        "provides": ["webex.authorization (environment-selected implementation)", "default export + config re-export"],
+        "requires": ["@webex/plugin-authorization-browser", "@webex/plugin-authorization-node"]
+      },
+      "last_assessed": "2026-07-31",
+      "section_profile": {
+        "has_ui": false,
+        "crosses_service_boundaries": false,
+        "enforces_domain_rules": false,
+        "is_concurrent_async": false,
+        "owns_persistence": false,
+        "returns_caller_errors": false,
+        "has_design_tradeoff": true,
+        "stateful_transitions": false,
+        "exposes_wire_protocol": false,
+        "ui_multi_screen": false,
+        "large_data_model": false,
+        "has_tiers": false,
+        "module_specific_conventions": false,
+        "published_package": true,
+        "embedded_in_host": false,
+        "holds_client_state": false,
+        "resolved_by": "claude-cli (assess-only, code + source spec evidence)",
+        "resolved_at": "2026-07-31T00:00:00Z"
+      },
+      "source_policy": {
+        "mode": "migrate-existing",
+        "existing_sources": ["packages/@webex/plugin-authorization/README.md"],
+        "conflict_status": "none",
+        "decision_record": ".generated/sdd/spec-source-policy/decision.md"
+      }
+    },
+    {
+      "path": "packages/@webex/plugin-authorization-browser/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "Assess-only draft: canonical spec migrated from the Browser OAuth Flow Guide + README; coverage not yet measured. Public browser OAuth2 implementation.",
+      "canonical_spec": "packages/@webex/plugin-authorization-browser/ai-docs/plugin-authorization-browser-spec.md",
+      "contracts": {
+        "provides": ["initiateLogin", "initiateImplicitGrant", "initiateAuthorizationCodeGrant", "requestAccessTokenFromJwt", "createJwt", "logout", "isAuthorizing/isAuthenticating/ready"],
+        "requires": ["@webex/webex-core (WebexPlugin, grantErrors, credentials)", "@webex/common (base64, oneFlight, whileInFlight)", "@webex/internal-plugin-device", "IdBroker OAuth endpoints", "hydra jwt/login endpoint"]
+      },
+      "characterization_baseline": "packages/@webex/plugin-authorization-browser/test/unit/spec/authorization.js",
+      "last_assessed": "2026-07-31",
+      "section_profile": {
+        "has_ui": false,
+        "crosses_service_boundaries": true,
+        "enforces_domain_rules": true,
+        "is_concurrent_async": false,
+        "owns_persistence": false,
+        "returns_caller_errors": true,
+        "has_design_tradeoff": true,
+        "stateful_transitions": false,
+        "exposes_wire_protocol": false,
+        "ui_multi_screen": false,
+        "large_data_model": false,
+        "has_tiers": false,
+        "module_specific_conventions": false,
+        "published_package": true,
+        "embedded_in_host": false,
+        "holds_client_state": true,
+        "resolved_by": "claude-cli (assess-only, code + source spec evidence)",
+        "resolved_at": "2026-07-31T00:00:00Z"
+      },
+      "source_policy": {
+        "mode": "migrate-existing",
+        "existing_sources": [
+          "packages/@webex/plugin-authorization-browser/BROWSER-OAUTH-FLOW-GUIDE.md",
+          "packages/@webex/plugin-authorization-browser/README.md"
+        ],
+        "conflict_status": "none",
+        "decision_record": ".generated/sdd/spec-source-policy/decision.md"
+      }
+    },
+    {
+      "path": "packages/@webex/plugin-authorization-node/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "Assess-only draft: canonical spec migrated from the Node OAuth Flow Guide + README; coverage not yet measured. Server-side OAuth2 token exchange.",
+      "canonical_spec": "packages/@webex/plugin-authorization-node/ai-docs/plugin-authorization-node-spec.md",
+      "contracts": {
+        "provides": ["requestAuthorizationCodeGrant", "requestAccessTokenFromJwt", "createJwt", "logout", "isAuthorizing/isAuthenticating"],
+        "requires": ["@webex/webex-core (WebexPlugin, grantErrors, credentials)", "@webex/common (oneFlight, whileInFlight)", "@webex/internal-plugin-device", "IdBroker token endpoint", "hydra jwt/login endpoint"]
+      },
+      "characterization_baseline": "packages/@webex/plugin-authorization-node/test/unit/spec/authorization.js",
+      "last_assessed": "2026-07-31",
+      "section_profile": {
+        "has_ui": false,
+        "crosses_service_boundaries": true,
+        "enforces_domain_rules": true,
+        "is_concurrent_async": false,
+        "owns_persistence": false,
+        "returns_caller_errors": true,
+        "has_design_tradeoff": false,
+        "stateful_transitions": false,
+        "exposes_wire_protocol": false,
+        "ui_multi_screen": false,
+        "large_data_model": false,
+        "has_tiers": false,
+        "module_specific_conventions": false,
+        "published_package": true,
+        "embedded_in_host": false,
+        "holds_client_state": false,
+        "resolved_by": "claude-cli (assess-only, code + source spec evidence)",
+        "resolved_at": "2026-07-31T00:00:00Z"
+      },
+      "source_policy": {
+        "mode": "migrate-existing",
+        "existing_sources": [
+          "packages/@webex/plugin-authorization-node/NODE-OAUTH-FLOW-GUIDE.md",
+          "packages/@webex/plugin-authorization-node/README.md"
+        ],
+        "conflict_status": "none",
+        "decision_record": ".generated/sdd/spec-source-policy/decision.md"
+      }
+    },
+    {
+      "path": "packages/@webex/plugin-authorization-browser-first-party/",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "Assess-only draft: canonical spec migrated from the first-party README + source; coverage not yet measured. Hardened PKCE + QR device login for the Webex web client.",
+      "canonical_spec": "packages/@webex/plugin-authorization-browser-first-party/ai-docs/plugin-authorization-browser-first-party-spec.md",
+      "contracts": {
+        "provides": ["initiateLogin", "initiateAuthorizationCodeGrant", "requestAuthorizationCodeGrant", "initQRCodeLogin", "cancelQRCodePolling", "logout", "eventEmitter", "Events", "isAuthorizing/isAuthenticating/ready"],
+        "requires": ["@webex/webex-core (WebexPlugin, grantErrors, credentials, services)", "@webex/common (base64, oneFlight, whileInFlight)", "crypto-js (PKCE S256)", "IdBroker OAuth endpoints", "oauth-helper device authorize/token endpoints", "services.collectPreauthCatalog"]
+      },
+      "characterization_baseline": "packages/@webex/plugin-authorization-browser-first-party/test/unit/spec/authorization.js",
+      "last_assessed": "2026-07-31",
+      "section_profile": {
+        "has_ui": false,
+        "crosses_service_boundaries": true,
+        "enforces_domain_rules": true,
+        "is_concurrent_async": true,
+        "owns_persistence": false,
+        "returns_caller_errors": true,
+        "has_design_tradeoff": true,
+        "stateful_transitions": true,
+        "exposes_wire_protocol": false,
+        "ui_multi_screen": false,
+        "large_data_model": false,
+        "has_tiers": false,
+        "module_specific_conventions": true,
+        "published_package": true,
+        "embedded_in_host": false,
+        "holds_client_state": true,
+        "resolved_by": "claude-cli (assess-only, code + source spec evidence)",
+        "resolved_at": "2026-07-31T00:00:00Z"
+      },
+      "source_policy": {
+        "mode": "migrate-existing",
+        "existing_sources": ["packages/@webex/plugin-authorization-browser-first-party/README.md"],
+        "conflict_status": "none",
+        "decision_record": ".generated/sdd/spec-source-policy/decision.md"
+      }
+    }
+  ],
+  "spec_policy": {
+    "delta_grammar": {
+      "added": "## ADDED Requirements",
+      "modified": "## MODIFIED Requirements",
+      "removed": "## REMOVED Requirements"
+    },
+    "require_what_and_why": true,
+    "require_provenance": true,
+    "protected_specs": [
+      "packages/@webex/plugin-authorization/ai-docs/plugin-authorization-spec.md",
+      "packages/@webex/plugin-authorization-browser/ai-docs/plugin-authorization-browser-spec.md",
+      "packages/@webex/plugin-authorization-node/ai-docs/plugin-authorization-node-spec.md",
+      "packages/@webex/plugin-authorization-browser-first-party/ai-docs/plugin-authorization-browser-first-party-spec.md"
+    ],
+    "required_sections_by_change_class": {
+      "core_always": ["Intent (WHAT)", "Rationale (WHY)", "Scope/Out-of-scope", "Acceptance criteria", "Contracts delta"],
+      "security_or_contract_or_perf_critical": ["Data", "Error Matrix", "Resilience", "Observability", "Operations"]
+    }
+  },
+  "validation": {
+    "generator_runtime": "claude-cli",
+    "generator_model": "us.anthropic.claude-opus-4-8",
+    "generator_runtime_source": "invocation-input",
+    "minimum_independence": "different-runtime",
+    "blocking_severities": ["Blocking"],
+    "generator_run_id": "2759fa44-8ce8-4337-815a-4641c57c9be7"
+  },
+  "layout": {
+    "sdd_root": ".sdd",
+    "docs_root": "ai-docs",
+    "standing_docs_root": "ai-docs",
+    "spec_index_path": "ai-docs/SPEC_INDEX.md",
+    "module_docs_strategy": "source-local",
+    "module_docs_folder_name": "ai-docs",
+    "template_roots": {
+      "canonical": ".sdd/templates",
+      "extensions": [".sdd/templates/extensions"]
+    },
+    "repo_skills_root": ".sdd/skills",
+    "contracts_strategy": "root-index-module-detail"
+  },
+  "substrate": {
+    "source": "webex-js-sdk repo standards (eslint/prettier/babel/legacy-tools configs, README/CONTRIBUTING/LICENSE)",
+    "consumed": ["lint/format configs (eslint, prettier)", "build tooling (@webex/legacy-tools, babel configs)", "standard files (README/CONTRIBUTING/LICENSE)"],
+    "compliance_tier": "baseline"
+  },
+  "section_profiles": {
+    "repo": {
+      "owns_datastore": false,
+      "holds_client_state": true,
+      "components_interact": true,
+      "domain_data_across_components": false,
+      "caches_data": false,
+      "observability_convention": true,
+      "deploys_to_infra": false,
+      "shared_base_libs": true,
+      "is_monorepo": true,
+      "multi_platform": true,
+      "published_package": true,
+      "embedded_in_host": false,
+      "cross_repo_deps_material": false,
+      "security_arch_warranted": true
+    },
+    "resolved_by": "claude-cli (assess-only bootstrap)",
+    "resolved_at": "2026-07-31T00:00:00Z"
+  }
+}
