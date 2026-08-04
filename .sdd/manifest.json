@@ -1,0 +1,192 @@
+{
+  "manifest_version": 1,
+  "repository": {
+    "name": "webex-js-sdk",
+    "purpose": "Mono-repository of Cisco Webex JavaScript SDK packages for integrating with Webex platform services.",
+    "category": "cat1-legacy",
+    "primary_languages": ["javascript", "typescript"]
+  },
+  "topology": "Single-repo",
+  "commands": {
+    "install": { "command": "yarn install", "source_file": "package.json", "role": "install" },
+    "build": { "command": "yarn build", "source_file": "package.json", "role": "build" },
+    "test": { "command": "yarn test", "source_file": "package.json", "role": "unit-test" },
+    "test-unit": { "command": "yarn test:unit", "source_file": "package.json", "role": "unit-test" },
+    "test-integration": { "command": "yarn test:integration", "source_file": "package.json", "role": "integration-test" },
+    "lint": { "command": "yarn lint", "source_file": "package.json", "role": "lint" }
+  },
+  "toolchain": [
+    { "name": "node", "version": "18.x", "origin": "repo-config", "source_file": "package.json" },
+    { "name": "npm", "version": ">=10.5", "origin": "repo-config", "source_file": "package.json" },
+    { "name": "yarn", "version": "3.4.1", "origin": "repo-config", "source_file": "package.json" }
+  ],
+  "registries": [
+    {
+      "name": "webex-release-npm",
+      "type": "npm",
+      "host": "engci-maven-master.cisco.com",
+      "origin": "repo-config",
+      "source_file": "package.json"
+    }
+  ],
+  "artifacts": [
+    {
+      "name": "@webex/json-multistream",
+      "type": "npm-package",
+      "coordinates": "@webex/json-multistream",
+      "version": "2.4.3",
+      "registry": "webex-release-npm",
+      "source_file": "package.json"
+    }
+  ],
+  "tests": {
+    "unit": { "command_ref": "test-unit", "dir": "packages", "framework": "jest" },
+    "integration": { "command_ref": "test-integration", "dir": "packages", "framework": "karma/mocha" }
+  },
+  "quality_gates": {
+    "code_coverage": {
+      "origin": "unknown"
+    }
+  },
+  "coverage_status_definitions": {
+    "specced": ">=80% public surface specced, drift <5% — spec is authoritative",
+    "partial": "40-80% specced — spec is a hint, cross-check code",
+    "untracked": "<40% specced — code is the source of truth"
+  },
+  "spec_source_policy": {
+    "mode": "migrate-existing",
+    "migrated_source_disposition": "retain",
+    "disposition_decided_by": "config-fallback (automated assumption; not human-verified)",
+    "disposition_decided_at": "2026-08-04T00:00:00Z",
+    "decided_by": "config-fallback (automated assumption; not human-verified)",
+    "decided_at": "2026-08-04T00:00:00Z",
+    "decision_record": ".generated/sdd/spec-source-policy/decision.md"
+  },
+  "spec_sources": [
+    {
+      "path": "webex-plugin-architecture.md",
+      "scope": "module",
+      "module": "packages/@webex/webex-core/",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "packages/@webex/webex-core/ai-docs/webex-core-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Hand-authored webex-core technical/architecture doc. Content units routed by meaning into the canonical module spec and, for system-level flows, standing docs. Retained pending human retention/deletion decision (recorded [NEEDS HUMAN INPUT] in the decision record). Source-fidelity review is host-deferred."
+    }
+  ],
+  "modules": [
+    {
+      "path": "packages/@webex/webex-core/",
+      "coverage_status": "Partial",
+      "coverage_evidence": "Routed source doc (webex-plugin-architecture.md) documents plugin registration, HTTP interceptor pipeline, storage, config, and events at a design level; canonical spec migrated from it and grounded in src/. Coverage percentage pending host-owned coverage-review. Assess-only draft.",
+      "canonical_spec": "packages/@webex/webex-core/ai-docs/webex-core-spec.md",
+      "contracts": {
+        "provides": [
+          "default WebexCore export + registerPlugin/registerInternalPlugin (webex-core.js)",
+          "WebexPlugin / StatelessWebexPlugin base classes (lib/webex-plugin.js)",
+          "makeWebexStore/makeWebexPluginStore + MemoryStoreAdapter (lib/storage)",
+          "Credentials/Token/Services/ServiceCatalog exports (lib/credentials, lib/services)",
+          "HTTP interceptor classes (interceptors/*)"
+        ],
+        "requires": [
+          "@webex/http-core (HTTP pipeline primitives)",
+          "@webex/common (event proxying, retry, transfer)",
+          "ampersand-state (state management base)",
+          "external Webex platform services (service discovery, auth, /token)"
+        ]
+      },
+      "last_assessed": "2026-08-04",
+      "section_profile": {
+        "has_ui": false,
+        "crosses_service_boundaries": true,
+        "enforces_domain_rules": true,
+        "is_concurrent_async": true,
+        "owns_persistence": false,
+        "returns_caller_errors": true,
+        "has_design_tradeoff": null,
+        "stateful_transitions": false,
+        "exposes_wire_protocol": false,
+        "ui_multi_screen": false,
+        "large_data_model": false,
+        "has_tiers": false,
+        "module_specific_conventions": true,
+        "published_package": true,
+        "embedded_in_host": false,
+        "holds_client_state": true,
+        "has_submodules": false,
+        "resolved_by": "claude-cli / us.anthropic.claude-opus-4-8 (invocation-input; assess-only, migrate-existing from webex-plugin-architecture.md + code)",
+        "resolved_at": "2026-08-04T00:00:00Z"
+      },
+      "source_policy": {
+        "mode": "migrate-existing",
+        "existing_sources": ["webex-plugin-architecture.md"],
+        "conflict_status": "none",
+        "decision_record": ".generated/sdd/spec-source-policy/decision.md"
+      }
+    }
+  ],
+  "spec_policy": {
+    "delta_grammar": {
+      "added": "## ADDED Requirements",
+      "modified": "## MODIFIED Requirements",
+      "removed": "## REMOVED Requirements"
+    },
+    "require_what_and_why": true,
+    "require_provenance": true,
+    "protected_specs": ["packages/@webex/webex-core/ai-docs/webex-core-spec.md"],
+    "required_sections_by_change_class": {
+      "core_always": ["Intent (WHAT)", "Rationale (WHY)", "Scope/Out-of-scope", "Acceptance criteria", "Contracts delta"],
+      "security_or_contract_or_perf_critical": ["Data", "Error Matrix", "Resilience", "Observability", "Operations"]
+    }
+  },
+  "validation": {
+    "generator_runtime": "claude-cli",
+    "generator_model": "us.anthropic.claude-opus-4-8",
+    "generator_runtime_source": "invocation-input",
+    "minimum_independence": "different-runtime",
+    "blocking_severities": ["Blocking"],
+    "generator_run_id": "3359c809-f2de-46b0-9ddc-d2c69aa869ad"
+  },
+  "layout": {
+    "sdd_root": ".sdd",
+    "docs_root": "ai-docs",
+    "agent_entry_path": "AGENTS.md",
+    "standing_docs_root": "ai-docs",
+    "spec_index_path": "ai-docs/SPEC_INDEX.md",
+    "module_docs_strategy": "source-local",
+    "module_docs_folder_name": "ai-docs",
+    "template_roots": {
+      "canonical": ".sdd/templates",
+      "extensions": [".sdd/templates/extensions"]
+    },
+    "repo_skills_root": ".sdd/skills",
+    "contracts_strategy": "root-index-module-detail"
+  },
+  "substrate": {
+    "source": "webex-js-sdk repo standards (eslint/prettier/commitlint configs, README/CONTRIBUTING/LICENSE)",
+    "consumed": ["lint/format configs (eslint, prettier)", "commit lint (@commitlint/config-conventional)", "standard files (README/CONTRIBUTING/LICENSE)"],
+    "compliance_tier": "baseline"
+  },
+  "section_profiles": {
+    "repo": {
+      "owns_datastore": false,
+      "holds_client_state": true,
+      "components_interact": true,
+      "domain_data_across_components": null,
+      "caches_data": true,
+      "observability_convention": true,
+      "deploys_to_infra": false,
+      "shared_base_libs": true,
+      "is_monorepo": true,
+      "multi_platform": true,
+      "published_package": true,
+      "embedded_in_host": false,
+      "cross_repo_deps_material": false,
+      "security_arch_warranted": true
+    },
+    "resolved_by": "claude-cli / us.anthropic.claude-opus-4-8 (invocation-input; assess-only)",
+    "resolved_at": "2026-08-04T00:00:00Z"
+  }
+}
