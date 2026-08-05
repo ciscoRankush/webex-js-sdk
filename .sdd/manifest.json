@@ -1,0 +1,965 @@
+{
+  "manifest_version": 1,
+  "repository": {
+    "name": "webex-js-sdk",
+    "purpose": "JavaScript SDK for interacting with the Webex API — a Yarn-workspaces monorepo of public and internal plugins (meetings, calling, contact-center, people, messages, encryption, mercury, and shared core/infrastructure) built on the @webex/webex-core plugin framework.",
+    "category": "cat1-legacy",
+    "primary_languages": [
+      "typescript",
+      "javascript"
+    ]
+  },
+  "topology": "Multi-repo-workspace",
+  "commands": {
+    "install": {
+      "command": "yarn install",
+      "source_file": "package.json",
+      "role": "install"
+    },
+    "build": {
+      "command": "yarn build",
+      "source_file": "package.json",
+      "role": "package"
+    },
+    "build_package": {
+      "command": "yarn workspace @webex/<plugin-name> build:src",
+      "source_file": "AGENTS.md",
+      "role": "package"
+    },
+    "test_unit": {
+      "command": "yarn workspace @webex/<plugin-name> test:unit",
+      "source_file": "AGENTS.md",
+      "role": "unit-test"
+    },
+    "test_integration": {
+      "command": "yarn test:integration",
+      "source_file": "package.json",
+      "role": "integration-test"
+    },
+    "lint": {
+      "command": "yarn lint",
+      "source_file": "package.json",
+      "role": "lint"
+    },
+    "test_e2e": {
+      "command": "yarn test:e2e",
+      "source_file": "package.json",
+      "role": "e2e-test"
+    },
+    "docs": {
+      "command": "yarn build:docs",
+      "source_file": "package.json",
+      "role": "docs"
+    }
+  },
+  "toolchain": [
+    {
+      "name": "node",
+      "version": "18.x",
+      "origin": "repo-config",
+      "source_file": "package.json"
+    },
+    {
+      "name": "npm",
+      "version": ">=10.5",
+      "origin": "repo-config",
+      "source_file": "package.json"
+    },
+    {
+      "name": "yarn",
+      "version": "3.4.1",
+      "origin": "repo-config",
+      "source_file": "package.json"
+    }
+  ],
+  "coverage_status_definitions": {
+    "specced": ">=80% public surface specced, drift <5% — spec is authoritative",
+    "partial": "40-80% specced — spec is a hint, cross-check code",
+    "untracked": "<40% specced — code is the source of truth"
+  },
+  "spec_source_policy": {
+    "mode": "migrate-existing",
+    "migrated_source_disposition": "retain",
+    "disposition_decided_by": "config-fallback (automated; not human-verified)",
+    "disposition_decided_at": "2026-08-05T00:00:00Z",
+    "decided_by": "config-fallback (automated; not human-verified)",
+    "decided_at": "2026-08-05T00:00:00Z",
+    "decision_record": ".generated/sdd/bootstrap-questionnaire.md"
+  },
+  "spec_sources": [
+    {
+      "path": "AGENTS.md",
+      "scope": "repo",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "ai-docs/GETTING_STARTED.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Root developer guide (environment, build/test commands, refactoring/search conventions). Migrated by meaning into GETTING_STARTED (commands/toolchain) and RULES (conventions); the generated SDD agent-entry AGENTS.md is a distinct template-authored artifact. Original retained (canonical_overlaps empty; no self-route)."
+    },
+    {
+      "path": "webex-plugin-architecture.md",
+      "scope": "module",
+      "module": "packages/@webex/webex-core",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "packages/@webex/webex-core/ai-docs/webex-core-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "webex-core plugin/HTTP/storage/event architecture narrative migrated by meaning into the canonical webex-core module spec; original retained."
+    },
+    {
+      "path": "cc_playwright/ai-docs/AGENTS.md",
+      "scope": "module",
+      "module": "cc_playwright",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "cc_playwright/ai-docs/e2e-testing-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Playwright E2E runbook/workflow content migrated by meaning into the canonical E2E module spec; original retained."
+    },
+    {
+      "path": "cc_playwright/ai-docs/ARCHITECTURE.md",
+      "scope": "module",
+      "module": "cc_playwright",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "cc_playwright/ai-docs/e2e-testing-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Playwright framework architecture, file topology, TestManager, Utils, constants migrated by meaning into the canonical E2E module spec; original retained."
+    },
+    {
+      "path": "docs/superpowers/specs/2026-06-11-manual-deploy-package-resolution-design.md",
+      "scope": "repo",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "ai-docs/adr/0001-manual-deploy-package-resolution.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Legacy change-level design doc retained as a decision reference; summarized/linked from the ADR scaffold. Not a durable canonical module concern."
+    },
+    {
+      "path": "packages/@webex/contact-center/AGENTS.md",
+      "scope": "module",
+      "module": "packages/@webex/contact-center",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "packages/@webex/contact-center/ai-docs/contact-center-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Package agent-entry content migrated by meaning into the root-routed contact-center package spec; the package-local SDD tree (its own .sdd/manifest.json and specs) is retained and remains authoritative within the package."
+    },
+    {
+      "path": "packages/@webex/contact-center/ai-docs/ARCHITECTURE.md",
+      "scope": "module",
+      "module": "packages/@webex/contact-center",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "packages/@webex/contact-center/ai-docs/contact-center-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Package architecture migrated by meaning into the root-routed package spec; original retained."
+    },
+    {
+      "path": "packages/@webex/contact-center/ai-docs/contact-center-spec.md",
+      "scope": "module",
+      "module": "packages/@webex/contact-center",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "packages/@webex/contact-center/ai-docs/contact-center-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Existing package-local canonical spec is the primary migration source for the root-routed package spec; retained in place as the package's own canonical spec."
+    },
+    {
+      "path": "packages/@webex/contact-center/.sdd/manifest.json",
+      "scope": "module",
+      "module": "packages/@webex/contact-center",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "ai-docs/SPEC_INDEX.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Package-local SDD manifest is a native machine-readable source; retained and referenced from the root registry. Not migrated into markdown."
+    },
+    {
+      "path": "packages/@webex/internal-plugin-call-ai-summary/ai-docs/AGENTS.md",
+      "scope": "module",
+      "module": "packages/@webex/internal-plugin-call-ai-summary",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "packages/@webex/internal-plugin-call-ai-summary/ai-docs/call-ai-summary-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Plugin usage/API reference content migrated by meaning into the canonical module spec; original retained."
+    },
+    {
+      "path": "packages/@webex/internal-plugin-call-ai-summary/ai-docs/ARCHITECTURE.md",
+      "scope": "module",
+      "module": "packages/@webex/internal-plugin-call-ai-summary",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "packages/@webex/internal-plugin-call-ai-summary/ai-docs/call-ai-summary-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Plugin architecture, data flows, DTOs, error handling, and test strategy migrated by meaning into the canonical module spec; original retained."
+    },
+    {
+      "path": "packages/@webex/plugin-meetings/AGENTS.md",
+      "scope": "module",
+      "module": "packages/@webex/plugin-meetings",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "packages/@webex/plugin-meetings/ai-docs/plugin-meetings-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Package unit-test guidance migrated by meaning into the canonical module spec test strategy; original retained. Broader package behavior is an explicit gap pending human input (assess-only)."
+    },
+    {
+      "path": "packages/calling/AGENTS.md",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "packages/calling/ai-docs/calling-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Package agent-entry migrated by meaning into the root-routed package spec; the package-local SDD tree is retained and remains authoritative within the package."
+    },
+    {
+      "path": "packages/calling/ai-docs/ARCHITECTURE.md",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "source-material",
+      "canonical": false,
+      "use_by_agents": "source-for-migration",
+      "canonical_target": "packages/calling/ai-docs/calling-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Package architecture (backend connector strategy, error hierarchy, module graph) migrated by meaning into the root-routed package spec; original retained."
+    },
+    {
+      "path": "packages/calling/.sdd/manifest.json",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "ai-docs/SPEC_INDEX.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Package-local SDD manifest is a native machine-readable source; retained and referenced from the root registry."
+    },
+    {
+      "path": "packages/calling/src/ai-docs/AGENTS.md",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "packages/calling/ai-docs/calling-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Package-source orientation retained as package-local context; verified unique detail migrated by meaning into the root-routed package spec."
+    },
+    {
+      "path": "packages/calling/src/ai-docs/ARCHITECTURE.md",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "packages/calling/ai-docs/calling-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Package-source architecture retained as package-local context; verified unique detail migrated by meaning into the root-routed package spec."
+    },
+    {
+      "path": "packages/calling/src/CallHistory/ai-docs/AGENTS.md",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "packages/calling/ai-docs/calling-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Retained package-local submodule doc; remains authoritative within the calling package's own SDD tree. Summarized in the root-routed package spec sub-module registry."
+    },
+    {
+      "path": "packages/calling/src/CallHistory/ai-docs/ARCHITECTURE.md",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "packages/calling/ai-docs/calling-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Retained package-local submodule doc; remains authoritative within the calling package's own SDD tree."
+    },
+    {
+      "path": "packages/calling/src/CallHistory/ai-docs/call-history-spec.md",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "packages/calling/ai-docs/calling-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Existing package-local canonical submodule spec; retained in place and remains authoritative within the calling package. Referenced (not duplicated) from the root-routed package spec."
+    },
+    {
+      "path": "packages/calling/src/CallRecording/ai-docs/AGENTS.md",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "packages/calling/ai-docs/calling-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Retained package-local submodule doc; authoritative within the calling package's own SDD tree."
+    },
+    {
+      "path": "packages/calling/src/CallRecording/ai-docs/ARCHITECTURE.md",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "packages/calling/ai-docs/calling-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Retained package-local submodule doc; authoritative within the calling package's own SDD tree."
+    },
+    {
+      "path": "packages/calling/src/CallRecording/ai-docs/call-recording-spec.md",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "packages/calling/ai-docs/calling-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Existing package-local canonical submodule spec; retained in place. Referenced from the root-routed package spec."
+    },
+    {
+      "path": "packages/calling/src/CallSettings/ai-docs/AGENTS.md",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "packages/calling/ai-docs/calling-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Retained package-local submodule doc; authoritative within the calling package's own SDD tree."
+    },
+    {
+      "path": "packages/calling/src/CallSettings/ai-docs/ARCHITECTURE.md",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "packages/calling/ai-docs/calling-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Retained package-local submodule doc; authoritative within the calling package's own SDD tree."
+    },
+    {
+      "path": "packages/calling/src/CallSettings/ai-docs/call-settings-spec.md",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "packages/calling/ai-docs/calling-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Existing package-local canonical submodule spec; retained in place. Referenced from the root-routed package spec."
+    },
+    {
+      "path": "packages/calling/src/CallingClient/ai-docs/AGENTS.md",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "packages/calling/ai-docs/calling-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Retained package-local submodule doc; authoritative within the calling package's own SDD tree."
+    },
+    {
+      "path": "packages/calling/src/CallingClient/ai-docs/ARCHITECTURE.md",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "packages/calling/ai-docs/calling-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Retained package-local submodule doc; authoritative within the calling package's own SDD tree."
+    },
+    {
+      "path": "packages/calling/src/CallingClient/ai-docs/calling-client-spec.md",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "packages/calling/ai-docs/calling-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Existing package-local canonical submodule spec; retained in place. Referenced from the root-routed package spec."
+    },
+    {
+      "path": "packages/calling/src/Contacts/ai-docs/AGENTS.md",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "packages/calling/ai-docs/calling-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Retained package-local submodule doc; authoritative within the calling package's own SDD tree."
+    },
+    {
+      "path": "packages/calling/src/Contacts/ai-docs/ARCHITECTURE.md",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "packages/calling/ai-docs/calling-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Retained package-local submodule doc; authoritative within the calling package's own SDD tree."
+    },
+    {
+      "path": "packages/calling/src/Contacts/ai-docs/contacts-spec.md",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "packages/calling/ai-docs/calling-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Existing package-local canonical submodule spec; retained in place. Referenced from the root-routed package spec."
+    },
+    {
+      "path": "packages/calling/src/Metrics/ai-docs/AGENTS.md",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "packages/calling/ai-docs/calling-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Retained package-local submodule doc; authoritative within the calling package's own SDD tree."
+    },
+    {
+      "path": "packages/calling/src/Metrics/ai-docs/ARCHITECTURE.md",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "packages/calling/ai-docs/calling-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Retained package-local submodule doc; authoritative within the calling package's own SDD tree."
+    },
+    {
+      "path": "packages/calling/src/Metrics/ai-docs/metrics-spec.md",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "packages/calling/ai-docs/calling-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Existing package-local canonical submodule spec; retained in place. Referenced from the root-routed package spec."
+    },
+    {
+      "path": "packages/calling/src/SDKConnector/ai-docs/sdk-connector-spec.md",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "packages/calling/ai-docs/calling-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Existing package-local canonical submodule spec; retained in place. Referenced from the root-routed package spec."
+    },
+    {
+      "path": "packages/calling/src/Voicemail/ai-docs/AGENTS.md",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "packages/calling/ai-docs/calling-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Retained package-local submodule doc; authoritative within the calling package's own SDD tree."
+    },
+    {
+      "path": "packages/calling/src/Voicemail/ai-docs/ARCHITECTURE.md",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "packages/calling/ai-docs/calling-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Retained package-local submodule doc; authoritative within the calling package's own SDD tree."
+    },
+    {
+      "path": "packages/calling/src/Voicemail/ai-docs/voicemail-spec.md",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "packages/calling/ai-docs/calling-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Existing package-local canonical submodule spec; retained in place. Referenced from the root-routed package spec."
+    },
+    {
+      "path": "packages/calling/src/mobius-socket/ai-docs/AGENTS.md",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "packages/calling/ai-docs/calling-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Retained package-local submodule doc; authoritative within the calling package's own SDD tree."
+    },
+    {
+      "path": "packages/calling/src/mobius-socket/ai-docs/ARCHITECTURE.md",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "packages/calling/ai-docs/calling-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Retained package-local submodule doc; authoritative within the calling package's own SDD tree."
+    },
+    {
+      "path": "packages/calling/src/mobius-socket/ai-docs/mobius-socket-spec.md",
+      "scope": "module",
+      "module": "packages/calling",
+      "role": "reference-only",
+      "canonical": false,
+      "use_by_agents": "context-only",
+      "canonical_target": "packages/calling/ai-docs/calling-package-spec.md",
+      "post_migration_action": "retain",
+      "deletion_status": "not-applicable",
+      "notes": "Existing package-local canonical submodule spec; retained in place. Referenced from the root-routed package spec."
+    }
+  ],
+  "modules": [
+    {
+      "path": "packages/@webex/webex-core",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "Assess-only bootstrap draft. Canonical module spec generated from the migrated webex-plugin-architecture.md narrative; public-surface percentages, drift, and independent validation have not been established. Code and tests remain the source of truth.",
+      "canonical_spec": "packages/@webex/webex-core/ai-docs/webex-core-spec.md",
+      "contracts": {
+        "provides": [
+          "WebexCore/WebexInternalCore base classes and the WebexPlugin base class",
+          "registerPlugin/registerInternalPlugin plugin registration framework",
+          "HTTP request pipeline with pre/core/post interceptors",
+          "Bounded/unbounded storage adapters and configuration merge system",
+          "Event system (loaded/ready/change/logout) with child event bubbling"
+        ],
+        "requires": [
+          "AmpersandState state management",
+          "http-core network layer",
+          "Credentials/authentication inputs from the host application"
+        ]
+      },
+      "last_assessed": "2026-08-05",
+      "section_profile": {
+        "has_ui": false,
+        "crosses_service_boundaries": true,
+        "enforces_domain_rules": true,
+        "is_concurrent_async": true,
+        "owns_persistence": false,
+        "returns_caller_errors": true,
+        "has_design_tradeoff": true,
+        "stateful_transitions": false,
+        "exposes_wire_protocol": true,
+        "ui_multi_screen": false,
+        "large_data_model": false,
+        "has_tiers": false,
+        "module_specific_conventions": true,
+        "published_package": true,
+        "embedded_in_host": false,
+        "holds_client_state": true,
+        "resolved_by": "config-fallback (automated; not human-verified) from migrated architecture doc",
+        "resolved_at": "2026-08-05T00:00:00Z"
+      },
+      "source_policy": {
+        "mode": "migrate-existing",
+        "existing_sources": [
+          "webex-plugin-architecture.md"
+        ],
+        "conflict_status": "none",
+        "decision_record": ".generated/sdd/bootstrap-questionnaire.md"
+      }
+    },
+    {
+      "path": "packages/@webex/contact-center",
+      "coverage_status": "Partial",
+      "coverage_evidence": "Assess-only root bootstrap draft. The package already maintains its own complete SDD tree (packages/@webex/contact-center/.sdd/manifest.json + module specs); the root-routed package spec aggregates and links it. Root-level coverage percentages and independent validation are not yet established.",
+      "canonical_spec": "packages/@webex/contact-center/ai-docs/contact-center-package-spec.md",
+      "contracts": {
+        "provides": [
+          "Published @webex/contact-center package; ContactCenter WebexPlugin; agent/task/config/realtime/telemetry SDK surface"
+        ],
+        "requires": [
+          "Webex SDK host/plugin runtime; Contact Center REST and WebSocket services; @webex/calling, metrics, and mercury packages"
+        ]
+      },
+      "last_assessed": "2026-08-05",
+      "section_profile": {
+        "has_ui": false,
+        "crosses_service_boundaries": true,
+        "enforces_domain_rules": true,
+        "is_concurrent_async": true,
+        "owns_persistence": false,
+        "returns_caller_errors": true,
+        "has_design_tradeoff": true,
+        "stateful_transitions": true,
+        "exposes_wire_protocol": true,
+        "ui_multi_screen": false,
+        "large_data_model": false,
+        "has_tiers": false,
+        "module_specific_conventions": true,
+        "published_package": true,
+        "embedded_in_host": true,
+        "holds_client_state": true,
+        "resolved_by": "config-fallback (automated; not human-verified) from package SDD tree + migrated docs",
+        "resolved_at": "2026-08-05T00:00:00Z"
+      },
+      "source_policy": {
+        "mode": "migrate-existing",
+        "existing_sources": [
+          "packages/@webex/contact-center/AGENTS.md",
+          "packages/@webex/contact-center/ai-docs/ARCHITECTURE.md",
+          "packages/@webex/contact-center/ai-docs/contact-center-spec.md"
+        ],
+        "conflict_status": "none",
+        "decision_record": ".generated/sdd/bootstrap-questionnaire.md"
+      }
+    },
+    {
+      "path": "packages/calling",
+      "coverage_status": "Partial",
+      "coverage_evidence": "Assess-only root bootstrap draft. The package already maintains its own complete SDD tree (packages/calling/.sdd/manifest.json + per-submodule specs); the root-routed package spec aggregates and links it. Root-level coverage percentages and independent validation are not yet established.",
+      "canonical_spec": "packages/calling/ai-docs/calling-package-spec.md",
+      "contracts": {
+        "provides": [
+          "Published @webex/calling package; calling clients, registration, call control/media, history, recordings, settings, contacts, voicemail, metrics, and Mobius transport"
+        ],
+        "requires": [
+          "Webex SDK services (Mobius, Janus, Hydra, XSI, contacts, KMS, metrics); @webex/internal-media-core; Mercury real-time events"
+        ]
+      },
+      "last_assessed": "2026-08-05",
+      "section_profile": {
+        "has_ui": false,
+        "crosses_service_boundaries": true,
+        "enforces_domain_rules": true,
+        "is_concurrent_async": true,
+        "owns_persistence": false,
+        "returns_caller_errors": true,
+        "has_design_tradeoff": true,
+        "stateful_transitions": true,
+        "exposes_wire_protocol": true,
+        "ui_multi_screen": false,
+        "large_data_model": false,
+        "has_tiers": false,
+        "module_specific_conventions": true,
+        "published_package": true,
+        "embedded_in_host": false,
+        "holds_client_state": true,
+        "resolved_by": "config-fallback (automated; not human-verified) from package SDD tree + migrated docs",
+        "resolved_at": "2026-08-05T00:00:00Z"
+      },
+      "source_policy": {
+        "mode": "migrate-existing",
+        "existing_sources": [
+          "packages/calling/AGENTS.md",
+          "packages/calling/ai-docs/ARCHITECTURE.md"
+        ],
+        "conflict_status": "none",
+        "decision_record": ".generated/sdd/bootstrap-questionnaire.md"
+      }
+    },
+    {
+      "path": "packages/@webex/internal-plugin-call-ai-summary",
+      "coverage_status": "Partial",
+      "coverage_evidence": "Assess-only bootstrap draft. Canonical module spec generated by migrating the plugin AGENTS.md usage reference and ARCHITECTURE.md design doc; grounded in src/ai-summary.ts behavior. Public-surface percentages, drift, and independent validation not yet established.",
+      "canonical_spec": "packages/@webex/internal-plugin-call-ai-summary/ai-docs/call-ai-summary-spec.md",
+      "contracts": {
+        "provides": [
+          "webex.internal.aisummary namespace: getContainer, getSummary, getNotes, getActionItems, getTranscriptUrl, getTranscript"
+        ],
+        "requires": [
+          "@webex/webex-core (WebexPlugin, registerInternalPlugin, request); @webex/internal-plugin-encryption (KMS decryptText); Pragya and AI Bridge services"
+        ]
+      },
+      "last_assessed": "2026-08-05",
+      "section_profile": {
+        "has_ui": false,
+        "crosses_service_boundaries": true,
+        "enforces_domain_rules": true,
+        "is_concurrent_async": true,
+        "owns_persistence": false,
+        "returns_caller_errors": true,
+        "has_design_tradeoff": true,
+        "stateful_transitions": false,
+        "exposes_wire_protocol": true,
+        "ui_multi_screen": false,
+        "large_data_model": false,
+        "has_tiers": false,
+        "module_specific_conventions": true,
+        "published_package": true,
+        "embedded_in_host": true,
+        "holds_client_state": false,
+        "resolved_by": "config-fallback (automated; not human-verified) from migrated docs + code",
+        "resolved_at": "2026-08-05T00:00:00Z"
+      },
+      "source_policy": {
+        "mode": "migrate-existing",
+        "existing_sources": [
+          "packages/@webex/internal-plugin-call-ai-summary/ai-docs/AGENTS.md",
+          "packages/@webex/internal-plugin-call-ai-summary/ai-docs/ARCHITECTURE.md"
+        ],
+        "conflict_status": "none",
+        "decision_record": ".generated/sdd/bootstrap-questionnaire.md"
+      }
+    },
+    {
+      "path": "packages/@webex/plugin-meetings",
+      "coverage_status": "Untracked",
+      "coverage_evidence": "Assess-only bootstrap draft. Only a narrow unit-test guidance note was routed as source; broad package behavior, public surface, flows, and requirements are unresolved and recorded as [NEEDS HUMAN INPUT]. Code and tests remain the source of truth.",
+      "canonical_spec": "packages/@webex/plugin-meetings/ai-docs/plugin-meetings-spec.md",
+      "contracts": {
+        "provides": [
+          "Published @webex/plugin-meetings package; meetings public plugin (public surface pending human confirmation)"
+        ],
+        "requires": [
+          "@webex/webex-core plugin framework; Locus/Mercury/media services (pending confirmation)"
+        ]
+      },
+      "last_assessed": "2026-08-05",
+      "section_profile": {
+        "has_ui": null,
+        "crosses_service_boundaries": true,
+        "enforces_domain_rules": null,
+        "is_concurrent_async": true,
+        "owns_persistence": false,
+        "returns_caller_errors": null,
+        "has_design_tradeoff": null,
+        "stateful_transitions": null,
+        "exposes_wire_protocol": null,
+        "ui_multi_screen": false,
+        "large_data_model": null,
+        "has_tiers": false,
+        "module_specific_conventions": true,
+        "published_package": true,
+        "embedded_in_host": false,
+        "holds_client_state": null,
+        "resolved_by": "config-fallback (automated; partial — thin routed source, gaps pending human input)",
+        "resolved_at": "2026-08-05T00:00:00Z"
+      },
+      "source_policy": {
+        "mode": "migrate-existing",
+        "existing_sources": [
+          "packages/@webex/plugin-meetings/AGENTS.md"
+        ],
+        "conflict_status": "none",
+        "decision_record": ".generated/sdd/bootstrap-questionnaire.md"
+      }
+    },
+    {
+      "path": "cc_playwright",
+      "coverage_status": "Partial",
+      "coverage_evidence": "Assess-only bootstrap draft. Canonical module spec generated by migrating the Playwright AGENTS.md runbook and ARCHITECTURE.md framework reference. Coverage percentages and independent validation not yet established.",
+      "canonical_spec": "cc_playwright/ai-docs/e2e-testing-spec.md",
+      "contracts": {
+        "provides": [
+          "Playwright E2E test framework for Contact Center widgets: TestManager orchestrator, Utils helpers, set/suite/test mapping, OAuth setup"
+        ],
+        "requires": [
+          "samples-cc-react-app served locally; Webex Contact Center backends; OAuth tokens per user set; Chrome with fake media flags"
+        ]
+      },
+      "last_assessed": "2026-08-05",
+      "section_profile": {
+        "has_ui": true,
+        "crosses_service_boundaries": true,
+        "enforces_domain_rules": false,
+        "is_concurrent_async": true,
+        "owns_persistence": false,
+        "returns_caller_errors": false,
+        "has_design_tradeoff": true,
+        "stateful_transitions": true,
+        "exposes_wire_protocol": false,
+        "ui_multi_screen": true,
+        "large_data_model": false,
+        "has_tiers": false,
+        "module_specific_conventions": true,
+        "published_package": false,
+        "embedded_in_host": false,
+        "holds_client_state": true,
+        "resolved_by": "config-fallback (automated; not human-verified) from migrated docs",
+        "resolved_at": "2026-08-05T00:00:00Z"
+      },
+      "source_policy": {
+        "mode": "migrate-existing",
+        "existing_sources": [
+          "cc_playwright/ai-docs/AGENTS.md",
+          "cc_playwright/ai-docs/ARCHITECTURE.md"
+        ],
+        "conflict_status": "none",
+        "decision_record": ".generated/sdd/bootstrap-questionnaire.md"
+      }
+    }
+  ],
+  "spec_policy": {
+    "delta_grammar": {
+      "added": "## ADDED Requirements",
+      "modified": "## MODIFIED Requirements",
+      "removed": "## REMOVED Requirements"
+    },
+    "require_what_and_why": true,
+    "require_provenance": true,
+    "protected_specs": [
+      "packages/@webex/webex-core/ai-docs/webex-core-spec.md",
+      "packages/@webex/contact-center/ai-docs/contact-center-package-spec.md",
+      "packages/calling/ai-docs/calling-package-spec.md",
+      "packages/@webex/internal-plugin-call-ai-summary/ai-docs/call-ai-summary-spec.md",
+      "packages/@webex/plugin-meetings/ai-docs/plugin-meetings-spec.md",
+      "cc_playwright/ai-docs/e2e-testing-spec.md",
+      "AGENTS.md",
+      "ai-docs/ARCHITECTURE.md",
+      "ai-docs/SPEC_INDEX.md",
+      "ai-docs/CONTRACTS.md"
+    ],
+    "required_sections_by_change_class": {
+      "core_always": [
+        "Intent (WHAT)",
+        "Rationale (WHY)",
+        "Scope/Out-of-scope",
+        "Acceptance criteria",
+        "Contracts delta"
+      ],
+      "security_or_contract_or_perf_critical": [
+        "Data",
+        "Error Matrix",
+        "Resilience",
+        "Observability",
+        "Operations"
+      ]
+    }
+  },
+  "validation": {
+    "generator_runtime": "claude-cli",
+    "generator_model": "us.anthropic.claude-opus-4-8",
+    "generator_runtime_source": "invocation-input",
+    "minimum_independence": "different-runtime",
+    "must_differ": true,
+    "blocking_severities": [
+      "Blocking"
+    ],
+    "generator_run_id": "793729e2-22fd-4aab-afd9-c11ce87578ac",
+    "base_ref": "main"
+  },
+  "layout": {
+    "sdd_root": ".sdd",
+    "docs_root": "ai-docs",
+    "agent_entry_path": "AGENTS.md",
+    "standing_docs_root": "ai-docs",
+    "spec_index_path": "ai-docs/SPEC_INDEX.md",
+    "module_docs_strategy": "source-local",
+    "module_docs_folder_name": "ai-docs",
+    "template_roots": {
+      "canonical": ".sdd/templates",
+      "extensions": [
+        ".sdd/templates/extensions"
+      ]
+    },
+    "contracts_strategy": "root-index-module-detail"
+  },
+  "coverage_ratchet": {
+    "enabled": true,
+    "waivers": []
+  },
+  "substrate": {
+    "source": "webex-js-sdk repository standards",
+    "consumed": [
+      "package.json",
+      "AGENTS.md",
+      ".eslintrc.js",
+      ".prettierrc",
+      "config/tsconfig.typecheck.json",
+      "tooling/index.js"
+    ],
+    "compliance_tier": "legacy"
+  },
+  "section_profiles": {
+    "repo": {
+      "owns_datastore": false,
+      "holds_client_state": true,
+      "components_interact": true,
+      "domain_data_across_components": true,
+      "caches_data": true,
+      "observability_convention": true,
+      "deploys_to_infra": false,
+      "shared_base_libs": true,
+      "is_monorepo": true,
+      "multi_platform": true,
+      "published_package": true,
+      "embedded_in_host": true,
+      "cross_repo_deps_material": true,
+      "security_arch_warranted": true
+    },
+    "resolved_by": "config-fallback (automated; not human-verified) — bootstrap questionnaire",
+    "resolved_at": "2026-08-05T00:00:00Z"
+  }
+}
